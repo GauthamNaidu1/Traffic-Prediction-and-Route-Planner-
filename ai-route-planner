@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Maps Replica - AI Route Planner</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet.js for Interactive Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <!-- Leaflet Routing Machine for turn-by-turn directions -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+    <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+    
+    <style>
+        body { margin: 0; font-family: 'Roboto', sans-serif; }
+        #map { height: calc(100vh - 64px); width: 100%; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #555; }
+        .search-box { box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3); }
+        .map-type-toggle { position: absolute; top: 80px; right: 10px; z-index: 1000; }
+        .travel-mode { display: flex; gap: 10px; flex-wrap: wrap; }
+        .travel-mode button, .map-type-toggle button { padding: 8px 12px; border-radius: 16px; border: 1px solid #ddd; background: white; cursor: pointer; transition: all 0.2s; }
+        .travel-mode button.active, .map-type-toggle button.active { background-color: #e8f0fe; color: #1967d2; border-color: #1967d2; }
+        .directions-panel { background: white; border-left: 1px solid #ddd; overflow-y: auto; }
+        .directions-step { padding: 8px 12px; border-bottom: 1px solid #eee; display: flex; align-items: center; cursor: pointer; }
+        .directions-step:hover { background: #f5f5f5; }
+        .directions-icon { margin-right: 8px; font-size: 16px; }
+        
+        /* Autocomplete styles */
+        .autocomplete-container { position: relative; }
+        .autocomplete-suggestions {
+            position: absolute;
+            border: 1px solid #d4d4d4;
+            border-top: none;
+            z-index: 999;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background-color: white;
+            max-height: 150px;
+            overflow-y: auto;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+        .suggestion-item {
+            padding: 10px;
+            cursor: pointer;
+            border-bottom: 1px solid #ddd;
+        }
+        .suggestion-item:last-child {
+            border-bottom: none;
+        }
+        .suggestion-item:hover {
+            background-color: #e9e9e9;
+        }
+        /* Loading Spinner */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 4px solid #3498db;
+            width: 24px;
+            height: 24px;
+            -webkit-animation: spin 2s linear infinite;
+            animation: spin 2s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Accessibility improvements */
+        button:focus, input:focus { outline: 2px solid #1967d2; outline-offset: 2px; }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+        /* Hide default routing text panel */
+        .leaflet-routing-container { display: none; }
+        
+        /* Custom Route Pins */
+        .route-pin {
+            border-radius: 50% 50% 50% 0;
+            transform: rotate(-45deg);
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+            border: 2px solid white;
+        }
+        .route-pin-inner {
+            transform: rotate(45deg);
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+
+    <!-- Main Application Section -->
+    <div id="app-section" class="h-screen w-screen flex flex-col">
+        <header class="bg-white shadow p-4 flex justify-between items-center z-10">
+            <h1 class="text-xl font-bold text-gray-800">Route Planner - Hyderabad/Secunderabad</h1>
+        </header>
+        
+        <div class="flex flex-1 overflow-hidden">
+            <!-- Control Panel (Search & Options) -->
+            <aside class="w-80 bg-white p-6 shadow-lg flex flex-col overflow-y-auto custom-scrollbar" role="complementary" aria-label="Route controls">
+                <div class="search-box bg-white p-4 rounded-lg mb-4 shadow">
+                    <div class="mb-4 autocomplete-container">
+                        <label for="start-node" class="block text-gray-700 text-sm font-bold mb-2 sr-only">Starting point</label>
+                        <input id="start-node" type="text" class="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter starting point" aria-autocomplete="list" aria-haspopup="listbox">
+                        <div id="start-node-suggestions" class="autocomplete-suggestions hidden" role="listbox" aria-label="Starting point suggestions"></div>
+                    </div>
+                    <div class="mb-4 autocomplete-container">
+                        <label for="end-node" class="block text-gray-700 text-sm font-bold mb-2 sr-only">Destination</label>
+                        <input id="end-node" type="text" class="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter destination" aria-autocomplete="list" aria-haspopup="listbox">
+                        <div id="end-node-suggestions" class="autocomplete-suggestions hidden" role="listbox" aria-label="Destination suggestions"></div>
+                    </div>
+                    <div class="travel-mode mb-4" role="radiogroup" aria-label="Travel mode">
+                        <button class="travel-mode-btn active" data-mode="driving" role="radio" aria-checked="true">🚗 Driving</button>
+                        <button class="travel-mode-btn" data-mode="walking" role="radio">🚶 Walking</button>
+                        <button class="travel-mode-btn" data-mode="transit" role="radio">🚌 Transit</button>
+                    </div>
+                    <div class="flex gap-2" role="group" aria-label="Departure time">
+                        <select id="day" class="w-1/2 p-2 border rounded-lg" aria-label="Day of week">
+                            <option value="0">Monday</option>
+                            <option value="1">Tuesday</option>
+                            <option value="2">Wednesday</option>
+                            <option value="3">Thursday</option>
+                            <option value="4">Friday</option>
+                            <option value="5">Saturday</option>
+                            <option value="6">Sunday</option>
+                        </select>
+                        <select id="hour" class="w-1/2 p-2 border rounded-lg" aria-label="Hour of day"></select>
+                    </div>
+                </div>
+                <button id="calculate-route" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 mb-4" aria-label="Calculate route">Get Directions</button>
+                
+                <!-- Directions Panel (Google Maps-like) -->
+                <div id="directions-panel" class="flex-1 overflow-y-auto custom-scrollbar hidden" role="region" aria-label="Directions">
+                    <div id="route-summary" class="p-4 bg-blue-50 rounded-lg mb-4">
+                        <h3 class="text-lg font-semibold text-gray-700">Route Summary</h3>
+                        <p class="text-sm text-gray-600">ETA: <strong id="time-output"></strong></p>
+                        <p class="text-sm text-gray-600">Distance: <strong id="distance-output"></strong></p>
+                        <div id="comparison" class="mt-2 text-xs text-gray-500 hidden">
+                            <p>No Traffic: <strong id="no-traffic-time"></strong> min | <strong id="no-traffic-distance"></strong> km</p>
+                        </div>
+                    </div>
+                    <div id="directions-steps"></div>
+                </div>
+
+                <!-- Gemini Features Section -->
+                <div id="gemini-controls" class="mt-4 space-y-2 hidden">
+                    <button id="get-summary-btn" class="w-full bg-blue-100 text-blue-700 hover:bg-blue-200 font-semibold py-2 px-4 rounded-lg transition duration-300" aria-label="Get AI route summary">✨ Get AI Route Summary</button>
+                    <button id="get-itinerary-btn" class="w-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 font-semibold py-2 px-4 rounded-lg transition duration-300" aria-label="Suggest itinerary">✨ Suggest an Itinerary</button>
+                </div>
+                <div id="gemini-summary-section" class="mt-4 p-3 bg-blue-50 rounded-lg hidden">
+                    <p id="summary-output" class="text-sm text-blue-800"></p>
+                </div>
+                <div id="gemini-itinerary-section" class="mt-4 p-3 bg-indigo-50 rounded-lg hidden">
+                    <h4 class="font-bold text-indigo-800 mb-2">Suggested stops along your route:</h4>
+                    <ul id="itinerary-output" class="text-sm text-indigo-700 space-y-2 list-disc pl-5"></ul>
+                </div>
+                
+                <div id="loading-spinner" class="hidden mt-4 flex justify-center">
+                    <div class="loader" aria-label="Loading"></div>
+                </div>
+
+                <p class="text-xs text-gray-500 mt-2">Node Path: <strong id="path-output" class="font-mono break-all"></strong></p>
+            </aside>
+            
+            <main class="flex-1 relative">
+                <div id="map" role="application" aria-label="Interactive map"></div>
+                <div class="map-type-toggle bg-white p-1 rounded-lg shadow">
+                    <button class="map-type-btn active" data-type="roadmap" role="radio" aria-checked="true">Road</button>
+                    <button class="map-type-btn" data-type="satellite" role="radio">Satellite</button>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA ---
+        const cityData = {
+            nodes: {
+                'Secunderabad Station': { pos: [17.4368, 78.4983], label: 'Secunderabad Station' }, 
+                'Parade Ground': { pos: [17.4452, 78.4984], label: 'Parade Ground' }, 
+                'Paradise Circle': { pos: [17.4491, 78.4842], label: 'Paradise Circle' }, 
+                'Jubilee Bus Station': { pos: [17.4566, 78.5028], label: 'Jubilee Bus Station' }, 
+                'Patny Circle': { pos: [17.4391, 78.5082], label: 'Patny Circle' }, 
+                'Begumpet Station': { pos: [17.4478, 78.4725], label: 'Begumpet Station' },
+                'Hussain Sagar': { pos: [17.4239, 78.4738], label: 'Hussain Sagar' }, 
+                'Tank Bund Road': { pos: [17.4150, 78.4746], label: 'Tank Bund Road' }, 
+                'Necklace Road Station': { pos: [17.4277, 78.4688], label: 'Necklace Road Station' },
+                'Charminar': { pos: [17.3616, 78.4747], label: 'Charminar' }, 
+                'HITEC City': { pos: [17.4442, 78.3783], label: 'HITEC City' }, 
+                'Cyber Towers': { pos: [17.4496, 78.3799], label: 'Cyber Towers' }, 
+                'Jubilee Hills Check Post': { pos: [17.4285, 78.4354], label: 'Jubilee Hills Check Post' }
+            },
+            edges: [
+                { u: 'Secunderabad Station', v: 'Parade Ground', distance: 1520, speed_limit: 40, road_id: 0, 
+                  shape: [[17.4368, 78.4983], [17.4380, 78.4980], [17.4400, 78.4985], [17.4420, 78.4982], [17.4452, 78.4984]] }, 
+                { u: 'Parade Ground', v: 'Paradise Circle', distance: 2250, speed_limit: 60, road_id: 9, 
+                  shape: [[17.4452, 78.4984], [17.4460, 78.4950], [17.4485, 78.4900], [17.4491, 78.4842]] }, 
+                { u: 'Paradise Circle', v: 'Jubilee Bus Station', distance: 2550, speed_limit: 50, road_id: 10, 
+                  shape: [[17.4491, 78.4842], [17.4510, 78.4880], [17.4545, 78.4950], [17.4566, 78.5028]] }, 
+                { u: 'Paradise Circle', v: 'Begumpet Station', distance: 1820, speed_limit: 60, road_id: 19, 
+                  shape: [[17.4491, 78.4842], [17.4485, 78.4780], [17.4478, 78.4725]] }, 
+                { u: 'Patny Circle', v: 'Parade Ground', distance: 1220, speed_limit: 50, road_id: 7, 
+                  shape: [[17.4391, 78.5082], [17.4400, 78.5060], [17.4415, 78.5055], [17.4430, 78.5020], [17.4452, 78.4984]] },
+                { u: 'Parade Ground', v: 'Tank Bund Road', distance: 3550, speed_limit: 50, road_id: 20, 
+                  shape: [[17.4452, 78.4984], [17.4400, 78.4900], [17.4350, 78.4850], [17.4300, 78.4800], [17.4250, 78.4770], [17.4150, 78.4746]] }, 
+                { u: 'Tank Bund Road', v: 'Hussain Sagar', distance: 1050, speed_limit: 40, road_id: 21, 
+                  shape: [[17.4150, 78.4746], [17.4180, 78.4740], [17.4200, 78.4735], [17.4239, 78.4738]] }, 
+                { u: 'Hussain Sagar', v: 'Necklace Road Station', distance: 1550, speed_limit: 50, road_id: 23, 
+                  shape: [[17.4239, 78.4738], [17.4250, 78.4720], [17.4265, 78.4700], [17.4277, 78.4688]] }, 
+                { u: 'Necklace Road Station', v: 'Jubilee Hills Check Post', distance: 5600, speed_limit: 60, road_id: 25, 
+                  shape: [[17.4277, 78.4688], [17.4260, 78.4650], [17.4250, 78.4600], [17.4240, 78.4550], [17.4260, 78.4500], [17.4285, 78.4354]] }, 
+                { u: 'Jubilee Hills Check Post', v: 'Cyber Towers', distance: 6100, speed_limit: 60, road_id: 28, 
+                  shape: [[17.4285, 78.4354], [17.4300, 78.4300], [17.4350, 78.4200], [17.4380, 78.4100], [17.4420, 78.4000], [17.4450, 78.3900], [17.4496, 78.3799]] }, 
+                { u: 'Cyber Towers', v: 'HITEC City', distance: 1050, speed_limit: 50, road_id: 29, 
+                  shape: [[17.4496, 78.3799], [17.4470, 78.3790], [17.4442, 78.3783]] }, 
+                { u: 'Tank Bund Road', v: 'Charminar', distance: 5200, speed_limit: 40, road_id: 24, 
+                  shape: [[17.4150, 78.4746], [17.4100, 78.4750], [17.4050, 78.4740], [17.3950, 78.4750], [17.3850, 78.4720], [17.3700, 78.4700], [17.3616, 78.4747]] }
+            ]
+        };
+
+        // --- GEMINI API LOGIC ---
+        const loadingSpinner = document.getElementById('loading-spinner');
+        
+        async function callGemini(prompt) {
+            loadingSpinner.classList.remove('hidden');
+            const apiKey = ""; // Canvas will provide key
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.7, maxOutputTokens: 300 }
+            };
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) throw new Error(`API call failed: ${response.status}`);
+                const result = await response.json();
+                const candidate = result.candidates?.[0];
+                return candidate?.content?.parts?.[0]?.text.trim() || "Sorry, I couldn't generate a response.";
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                return "An error occurred while contacting the AI model.";
+            } finally {
+                loadingSpinner.classList.add('hidden');
+            }
+        }
+
+        // --- TRAFFIC PREDICTION ---
+        function predictTrafficMultiplier(hour, dayOfWeek, roadId, travelMode) {
+            hour = parseInt(hour); dayOfWeek = parseInt(dayOfWeek);
+            if (travelMode === 'walking') return 1.0;
+            if (travelMode === 'transit') return 1.3;
+            const isRushHour = dayOfWeek < 5 && ((hour >= 8 && hour <= 10) || (hour >= 17 && hour <= 20));
+            const isWeekendPeak = dayOfWeek >= 5 && (hour >= 12 && hour <= 16);
+            const roadFactor = roadId > 20 ? 1.2 : 1.0;
+            if (isRushHour) return 2.5 * roadFactor;
+            if (isWeekendPeak) return 1.5 * roadFactor;
+            return 1.1 * roadFactor;
+        }
+        
+        // --- ROUTE PLANNING ---
+        function findShortestPath(startNode, endNode, day, hour, travelMode, useTraffic = true) {
+            const distances = {}; const prev = {}; const pq = []; const adj = {}; const NODE_PENALTY = 1.0;
+            Object.keys(cityData.nodes).forEach(node => { 
+                distances[node] = Infinity; prev[node] = null; adj[node] = []; 
+            });
+            distances[startNode] = 0;
+            pq.push({ dist: 0, node: startNode });
+            cityData.edges.forEach(edge => { 
+                adj[edge.u].push({ node: edge.v, ...edge }); adj[edge.v].push({ node: edge.u, ...edge }); 
+            });
+            if (!adj[startNode] || !adj[endNode]) return null;
+            while (pq.length > 0) {
+                pq.sort((a, b) => a.dist - b.dist);
+                const { node: current } = pq.shift();
+                if (current === endNode || distances[current] === Infinity) break;
+                adj[current].forEach(neighborEdge => {
+                    const neighbor = neighborEdge.node;
+                    const multiplier = useTraffic ? predictTrafficMultiplier(hour, day, neighborEdge.road_id, travelMode) : 1.0;
+                    const distanceKm = neighborEdge.distance / 1000.0;
+                    const speed = getSpeedForMode(travelMode, neighborEdge.speed_limit);
+                    const travelTimeMin = (distanceKm / speed) * 60 * multiplier;
+                    const newDist = distances[current] + travelTimeMin + NODE_PENALTY;
+                    if (newDist < distances[neighbor]) { 
+                        distances[neighbor] = newDist; prev[neighbor] = current;
+                        pq.push({ dist: newDist, node: neighbor });
+                    }
+                });
+            }
+            const path = []; let current = endNode;
+            if (distances[endNode] === Infinity) return null;
+            while (current !== null) { path.unshift(current); current = prev[current]; }
+            if (path[0] !== startNode) return null;
+            let totalTime = 0; let totalDistance = 0;
+            let steps = [];
+            for (let i = 0; i < path.length - 1; i++) {
+                const u = path[i]; const v = path[i + 1];
+                const edge = cityData.edges.find(e => (e.u === u && e.v === v) || (e.u === v && e.v === u));
+                if (!edge) continue;
+                const multiplier = useTraffic ? predictTrafficMultiplier(hour, day, edge.road_id, travelMode) : 1.0;
+                const distanceKm = edge.distance / 1000.0;
+                const speed = getSpeedForMode(travelMode, edge.speed_limit);
+                const segmentTime = (distanceKm / speed) * 60 * multiplier;
+                totalTime += segmentTime;
+                totalDistance += edge.distance;
+                steps.push({
+                    instruction: `Follow road from ${u} to ${v} (${(edge.distance / 1000).toFixed(1)} km)`,
+                    distance: edge.distance,
+                    time: segmentTime,
+                    color: getTrafficColor(multiplier),
+                    shape: edge.shape
+                });
+            }
+            return { path, time: totalTime, totalDistance, steps };
+        }
+
+        function getSpeedForMode(travelMode, speedLimit) {
+            switch (travelMode) {
+                case 'walking': return 5;
+                case 'transit': return 30;
+                case 'driving': return speedLimit || 50;
+                default: return 50;
+            }
+        }
+
+        function comparePaths(startNode, endNode, day, hour, travelMode) {
+            const noTrafficResult = findShortestPath(startNode, endNode, day, hour, travelMode, false);
+            const withTrafficResult = findShortestPath(startNode, endNode, day, hour, travelMode, true);
+            return { noTraffic: noTrafficResult, withTraffic: withTrafficResult };
+        }
+
+        // --- UI LOGIC ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const appSection = document.getElementById('app-section'); 
+            const startNodeInput = document.getElementById('start-node'); 
+            const endNodeInput = document.getElementById('end-node'); 
+            const startNodeSuggestions = document.getElementById('start-node-suggestions'); 
+            const endNodeSuggestions = document.getElementById('end-node-suggestions'); 
+            const hourSelect = document.getElementById('hour'); 
+            const calculateBtn = document.getElementById('calculate-route'); 
+            const directionsPanel = document.getElementById('directions-panel'); 
+            const directionsSteps = document.getElementById('directions-steps'); 
+            const comparisonDiv = document.getElementById('comparison'); 
+            const noTrafficTime = document.getElementById('no-traffic-time'); 
+            const noTrafficDistance = document.getElementById('no-traffic-distance'); 
+            const travelModeButtons = document.querySelectorAll('.travel-mode-btn'); 
+            const mapTypeButtons = document.querySelectorAll('.map-type-btn');
+            const geminiControls = document.getElementById('gemini-controls');
+            const getSummaryBtn = document.getElementById('get-summary-btn');
+            const getItineraryBtn = document.getElementById('get-itinerary-btn');
+            const summarySection = document.getElementById('gemini-summary-section');
+            const itinerarySection = document.getElementById('gemini-itinerary-section');
+            const summaryOutput = document.getElementById('summary-output');
+            const itineraryOutput = document.getElementById('itinerary-output');
+            
+            let map, markerLayerGroup; 
+            let travelMode = 'driving'; 
+            let activeBaseLayer; 
+            const baseLayers = {}; 
+            let currentRouteResult = null;
+            let routingControl = null;
+
+            function initUI() {
+                for (let i = 0; i < 24; i++) {
+                    hourSelect.innerHTML += `<option value="${i}">${String(i).padStart(2, '0')}:00</option>`;
+                }
+
+                map = L.map('map', { zoomControl: true, attributionControl: true, keyboard: true }).setView([17.41, 78.47], 12);
+
+                baseLayers['roadmap'] = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' });
+                baseLayers['satellite'] = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '&copy; Esri' });
+                activeBaseLayer = baseLayers['roadmap']; activeBaseLayer.addTo(map);
+
+                markerLayerGroup = L.featureGroup().addTo(map);
+
+                Object.entries(cityData.nodes).forEach(([name, data]) => {
+                    L.marker(data.pos, { 
+                        icon: L.divIcon({ className: 'custom-marker', html: `<div style="background: #1a73e8; width: 8px; height: 8px; border-radius: 50%;"></div>`, iconSize: [8, 8] })
+                    }).bindPopup(`<b>${name}</b>`).addTo(markerLayerGroup);
+                });
+
+                const locations = Object.keys(cityData.nodes);
+                function setupAutocomplete(input, suggestionsContainer) {
+                    input.addEventListener('input', (e) => {
+                        const value = e.target.value.toLowerCase(); 
+                        suggestionsContainer.innerHTML = ''; 
+                        suggestionsContainer.classList.add('hidden');
+                        if (value.length < 2) return;
+                        const filtered = locations.filter(loc => loc.toLowerCase().includes(value));
+                        if (filtered.length === 0) return;
+                        suggestionsContainer.classList.remove('hidden');
+                        filtered.slice(0, 5).forEach(loc => {
+                            const item = document.createElement('div'); 
+                            item.className = 'suggestion-item'; 
+                            item.textContent = loc;
+                            item.setAttribute('role', 'option');
+                            item.addEventListener('click', () => { 
+                                input.value = loc; 
+                                suggestionsContainer.innerHTML = ''; 
+                                suggestionsContainer.classList.add('hidden'); 
+                            });
+                            suggestionsContainer.appendChild(item);
+                        });
+                    });
+                    input.addEventListener('keydown', (e) => {
+                        if (e.key === 'Escape') suggestionsContainer.classList.add('hidden');
+                    });
+                }
+                setupAutocomplete(startNodeInput, startNodeSuggestions); 
+                setupAutocomplete(endNodeInput, endNodeSuggestions);
+
+                document.addEventListener('click', (e) => { 
+                    if (!e.target.closest('.autocomplete-container')) { 
+                        startNodeSuggestions.classList.add('hidden'); 
+                        endNodeSuggestions.classList.add('hidden'); 
+                    } 
+                });
+
+                mapTypeButtons.forEach(btn => btn.addEventListener('click', () => { 
+                    mapTypeButtons.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-checked', 'false'); }); 
+                    btn.classList.add('active'); 
+                    btn.setAttribute('aria-checked', 'true');
+                    const mapType = btn.dataset.type; 
+                    map.removeLayer(activeBaseLayer); 
+                    activeBaseLayer = baseLayers[mapType]; 
+                    activeBaseLayer.addTo(map); 
+                }));
+
+                travelModeButtons.forEach(btn => btn.addEventListener('click', () => { 
+                    travelModeButtons.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-checked', 'false'); }); 
+                    btn.classList.add('active'); 
+                    btn.setAttribute('aria-checked', 'true');
+                    travelMode = btn.dataset.mode; 
+                }));
+            }
+
+            function drawMap(result = null) {
+                if (routingControl) {
+                    map.removeControl(routingControl);
+                    routingControl = null;
+                }
+
+                if (result) {
+                    const waypoints = result.path.map(node => L.latLng(cityData.nodes[node].pos[0], cityData.nodes[node].pos[1]));
+                    
+                    routingControl = L.Routing.control({
+                        waypoints: waypoints,
+                        createMarker: (i, wp, n) => {
+                             if (i === 0 || i === n - 1) {
+                                return L.marker(wp.latLng, {
+                                     icon: L.divIcon({
+                                         className: 'custom-pin',
+                                         html: `<div class="route-pin" style="background-color: ${i === 0 ? '#28a745' : '#dc3545'};"><div class="route-pin-inner">${i === 0 ? 'A' : 'B'}</div></div>`,
+                                         iconSize: [30, 30],
+                                         iconAnchor: [15, 30]
+                                     })
+                                 }).bindPopup(i === 0 ? 'Start' : 'Destination');
+                             } else {
+                                 return null;
+                             }
+                        },
+                        lineOptions: { styles: [{ color: '#1a73e8', weight: 6, opacity: 0.8 }] },
+                        addWaypoints: false,
+                        draggableWaypoints: false,
+                        show: false
+                    }).addTo(map);
+                }
+            }
+
+            function renderDirectionsSteps(steps) {
+                directionsSteps.innerHTML = '';
+                steps.forEach((step, index) => {
+                    const stepEl = document.createElement('div');
+                    stepEl.className = `directions-step ${index % 2 === 0 ? 'bg-gray-50' : ''}`;
+                    stepEl.innerHTML = `
+                        <span class="directions-icon" style="color: ${step.color}">📍</span>
+                        <div>
+                            <div>${index + 1}. ${step.instruction}</div>
+                            <small class="text-gray-500">${(step.distance / 1000).toFixed(1)} km • ${(step.time).toFixed(1)} min</small>
+                        </div>
+                    `;
+                    stepEl.addEventListener('click', () => {
+                        const startNodeOfStep = currentRouteResult.path[index];
+                        map.panTo(cityData.nodes[startNodeOfStep].pos);
+                    });
+                    directionsSteps.appendChild(stepEl);
+                });
+            }
+            
+            calculateBtn.addEventListener('click', () => {
+                const startNode = startNodeInput.value.trim(); 
+                const endNode = endNodeInput.value.trim(); 
+                const day = parseInt(document.getElementById('day').value); 
+                const hour = parseInt(document.getElementById('hour').value);
+                
+                directionsPanel.classList.add('hidden'); 
+                geminiControls.classList.add('hidden'); 
+                summarySection.classList.add('hidden'); 
+                itinerarySection.classList.add('hidden');
+                getSummaryBtn.classList.remove('hidden'); 
+                getItineraryBtn.classList.remove('hidden');
+                comparisonDiv.classList.add('hidden');
+                markerLayerGroup.clearLayers();
+
+                if (!startNode || !endNode) { alert("Please enter start and end locations."); markerLayerGroup.addTo(map); return; }
+                if (!Object.keys(cityData.nodes).includes(startNode) || !Object.keys(cityData.nodes).includes(endNode)) { alert("Please enter valid locations."); markerLayerGroup.addTo(map); return; }
+                if (startNode === endNode) { alert("Start and end cannot be the same."); markerLayerGroup.addTo(map); return; }
+
+                const comparison = comparePaths(startNode, endNode, day, hour, travelMode);
+                if (!comparison.withTraffic) { alert(`No route found.`); markerLayerGroup.addTo(map); return; }
+                
+                currentRouteResult = comparison.withTraffic; 
+                drawMap(currentRouteResult);
+                document.getElementById('path-output').textContent = currentRouteResult.path.join(' → ');
+                document.getElementById('time-output').textContent = `${currentRouteResult.time.toFixed(1)} min`;
+                document.getElementById('distance-output').textContent = `${(currentRouteResult.totalDistance / 1000).toFixed(1)} km`;
+                
+                const noTraffic = comparison.noTraffic;
+                noTrafficTime.textContent = `${noTraffic.time.toFixed(1)}`;
+                noTrafficDistance.textContent = `${(noTraffic.totalDistance / 1000).toFixed(1)}`;
+                comparisonDiv.classList.remove('hidden');
+                
+                renderDirectionsSteps(currentRouteResult.steps);
+                directionsPanel.classList.remove('hidden');
+                geminiControls.classList.remove('hidden');
+
+                console.log(`Route calculated: ${startNode} to ${endNode}, ETA ${currentRouteResult.time.toFixed(1)} min (with traffic)`);
+            });
+            
+            getSummaryBtn.addEventListener('click', async () => {
+                if (!currentRouteResult) return;
+                const dayName = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][parseInt(document.getElementById('day').value)];
+                const hourStr = document.getElementById('hour').value.padStart(2, '0') + ':00';
+                const prompt = `Provide a concise, engaging one-sentence summary of this ${travelMode} route in Hyderabad, India, departing at ${hourStr} on ${dayName}: ${currentRouteResult.path.join(' → ')}. Highlight key areas or vibes, e.g., 'Cruise from bustling Secunderabad through serene Hussain Sagar to vibrant HITEC City.'`;
+                const summary = await callGemini(prompt);
+                summaryOutput.textContent = summary;
+                summarySection.classList.remove('hidden');
+                getSummaryBtn.classList.add('hidden');
+            });
+            
+            getItineraryBtn.addEventListener('click', async () => {
+                if (!currentRouteResult) return;
+                const startNode = startNodeInput.value; 
+                const endNode = endNodeInput.value;
+                const day = document.getElementById('day');
+                const dayName = day.options[day.selectedIndex].text;
+                const hour = document.getElementById('hour').value;
+                const intermediateNodes = currentRouteResult.path.length > 2 ? currentRouteResult.path.slice(1, -1).join(', ') : 'direct';
+                
+                const prompt = `For a ${travelMode} trip in Hyderabad, India from ${startNode} to ${endNode} (passing ${intermediateNodes}), departing at ${hour}:00 on ${dayName}, suggest exactly 3 relevant points of interest (e.g., restaurants, parks, historical sites) along or near the route suitable for that time/day. For each, include: name, brief one-sentence description, and why it fits (e.g., quick stop). Output as a markdown list: * **Name**: Description. Why it fits. No intro/conclusion.`;
+                const itinerary = await callGemini(prompt);
+                const items = itinerary.split('*').filter(item => item.trim()).map(item => item.trim().replace(/^\*\s*/, ''));
+                if (items.length === 0) {
+                    itineraryOutput.innerHTML = '<li>No suggestions available.</li>';
+                } else {
+                    itineraryOutput.innerHTML = items.map(item => `<li>${item}</li>`).join('');
+                }
+                itinerarySection.classList.remove('hidden');
+                getItineraryBtn.classList.add('hidden');
+            });
+
+            window.addEventListener('resize', () => map?.invalidateSize());
+            
+            // Initial setup on page load
+            initUI();
+            setTimeout(() => map.invalidateSize(), 100);
+        });
+    </script>
+</body>
+</html>
