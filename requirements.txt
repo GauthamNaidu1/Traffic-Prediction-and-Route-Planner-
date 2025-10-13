@@ -1,0 +1,5 @@
+streamlit
+networkx
+folium
+streamlit-folium
+requests
