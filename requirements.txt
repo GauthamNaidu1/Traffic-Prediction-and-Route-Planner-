@@ -3,3 +3,6 @@ networkx
 folium
 streamlit-folium
 requests
+osmnx
+shapely
+scikit-learn

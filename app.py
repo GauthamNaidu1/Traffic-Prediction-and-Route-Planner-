@@ -1,563 +1,643 @@
+import os
+import heapq
 import math
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple, Any
 
-import streamlit as st
-import networkx as nx
 import folium
+import networkx as nx
+import osmnx as ox
+from shapely.geometry import LineString, MultiLineString
+import streamlit as st
 from streamlit_folium import st_folium
 
+# -----------------------------------------------------------------------------
+# Configuration & Constants
+# -----------------------------------------------------------------------------
+st.set_page_config(
+    page_title="AI-Powered Traffic & Route Planner",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-# -------------------------------------------------------------
-# Streamlit App Configuration
-# -------------------------------------------------------------
-st.set_page_config(page_title="AI-Powered Traffic Predictor & Route Planner", layout="wide")
-
-
-# -------------------------------------------------------------
-# Week 1: Problem Scope & Research (Documented in-code)
-# - Scope: Small urban district in Hyderabad/Secunderabad
-# - Data source: Hardcoded miniature network (conceptual stand-in for OSM)
-# - Algorithm: Dijkstra's algorithm over a NetworkX graph
-# -------------------------------------------------------------
-
-
-# -------------------------------------------------------------
-# Week 2: Build the Road Network Graph
-# - Nodes: intersections/landmarks (lat, lon)
-# - Edges: roads with distance_km and geometry (polyline)
-# -------------------------------------------------------------
-
-# Expanded network around Hyderabad/Secunderabad with realistic road connections
-# Node IDs are readable names for clarity in the UI
-CITY_NODES: Dict[str, Tuple[float, float]] = {
-    # Secunderabad Area
-    "Secunderabad Station": (17.4399, 78.4983),
-    "Parade Ground": (17.4452, 78.4984),
+# Landmarks for the dropdowns
+LANDMARKS: Dict[str, Tuple[float, float]] = {
+    "Secunderabad Railway Station": (17.4399, 78.4983),
     "Paradise Circle": (17.4422, 78.4900),
-    "Patny Circle": (17.4391, 78.5082),
-    "Jubilee Bus Station": (17.4566, 78.5028),
-    
-    # Central Hyderabad
-    "Begumpet Station": (17.4486, 78.4691),
-    "Begumpet Metro": (17.4486, 78.4691),
-    "Necklace Road": (17.4276, 78.4717),
+    "Begumpet": (17.4486, 78.4691),
+    "Begumpet Metro": (17.4415, 78.4705),
+    "Ameerpet": (17.4365, 78.4480),
+    "Punjagutta X Roads": (17.4188, 78.4520),
+    "Somajiguda": (17.4108, 78.4678),
+    "NTR Gardens": (17.4115, 78.4700),
     "Tank Bund": (17.4143, 78.4760),
-    "Hussain Sagar": (17.4239, 78.4738),
+    "Necklace Road": (17.4276, 78.4717),
+    "Khairatabad": (17.4095, 78.4575),
     "Lakdi-ka-pul": (17.4012, 78.4698),
-    
-    # IT Corridor
+    "Nampally": (17.3942, 78.4712),
+    "Koti": (17.3845, 78.4860),
+    "Charminar": (17.3616, 78.4747),
     "Hitech City": (17.4483, 78.3908),
     "Cyber Towers": (17.4496, 78.3799),
-    "Kondapur": (17.4582, 78.3700),
+    "Madhapur": (17.4430, 78.3860),
+    "Raidurg": (17.4305, 78.3825),
+    "Financial District": (17.4210, 78.3575),
     "Gachibowli": (17.4394, 78.3489),
-    "Nanakramguda": (17.4256, 78.3654),
-    
-    # South Hyderabad
-    "Jubilee Hills": (17.4310, 78.4070),
-    "Jubilee Hills Check Post": (17.4285, 78.4354),
+    "Kondapur": (17.4582, 78.3700),
+    "Jubilee Hills Check Post": (17.4310, 78.4070),
     "Banjara Hills": (17.4156, 78.4456),
-    "Panjagutta": (17.4134, 78.4567),
-    "Somajiguda": (17.4108, 78.4678),
-    
-    # Old City
-    "Charminar": (17.3616, 78.4747),
-    "Madina Circle": (17.3756, 78.4789),
-    "MGBS": (17.3856, 78.4689),
 }
 
-# Helper to compute straight-line distance (fallback for edges without explicit distance)
-def haversine_km(a: Tuple[float, float], b: Tuple[float, float]) -> float:
-    R = 6371.0
-    lat1, lon1 = map(math.radians, a)
-    lat2, lon2 = map(math.radians, b)
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    h = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-    return 2 * R * math.asin(math.sqrt(h))
+# Base speeds in m/s
+BASE_SPEEDS_MPS = {
+    "Car": 40 / 3.6,   # ~11.1 m/s
+    "Bike": 25 / 3.6,  # ~6.9 m/s
+    "Walk": 5 / 3.6,   # ~1.4 m/s
+}
 
-
-# Comprehensive road network with realistic geometries following actual roads
-# Each edge contains road_id, name, distance_km, and detailed geometry
-CITY_EDGES: List[Dict] = [
-    # Secunderabad Area Connections
-    {
-        "u": "Secunderabad Station", "v": "Parade Ground", "road_id": "R001", "name": "Station Road",
-        "distance_km": 1.2, "geometry": [(17.4399, 78.4983), (17.4415, 78.4980), (17.4430, 78.4982), (17.4452, 78.4984)]
-    },
-    {
-        "u": "Parade Ground", "v": "Paradise Circle", "road_id": "R002", "name": "Parade Ground Road",
-        "distance_km": 1.8, "geometry": [(17.4452, 78.4984), (17.4445, 78.4950), (17.4435, 78.4925), (17.4422, 78.4900)]
-    },
-    {
-        "u": "Paradise Circle", "v": "Begumpet Station", "road_id": "R003", "name": "MG Road",
-        "distance_km": 2.3, "geometry": [(17.4422, 78.4900), (17.4445, 78.4850), (17.4465, 78.4775), (17.4486, 78.4691)]
-    },
-    {
-        "u": "Patny Circle", "v": "Parade Ground", "road_id": "R004", "name": "Patny Road",
-        "distance_km": 1.1, "geometry": [(17.4391, 78.5082), (17.4405, 78.5050), (17.4420, 78.5020), (17.4452, 78.4984)]
-    },
-    {
-        "u": "Jubilee Bus Station", "v": "Parade Ground", "road_id": "R005", "name": "Jubilee Road",
-        "distance_km": 1.8, "geometry": [(17.4566, 78.5028), (17.4520, 78.5010), (17.4485, 78.5000), (17.4452, 78.4984)]
-    },
+# -----------------------------------------------------------------------------
+# Data Loading
+# -----------------------------------------------------------------------------
+@st.cache_resource(show_spinner="Loading Hyderabad road network (this may take time on first run)...")
+def load_graph() -> nx.MultiDiGraph:
+    """Loads the drive network for Hyderabad. Caches to disk for speed."""
+    file_path = "hyderabad_drive.graphml"
     
-    # Central Hyderabad Connections
-    {
-        "u": "Begumpet Station", "v": "Necklace Road", "road_id": "R006", "name": "Begumpet Road",
-        "distance_km": 2.5, "geometry": [(17.4486, 78.4691), (17.4420, 78.4700), (17.4350, 78.4705), (17.4276, 78.4717)]
-    },
-    {
-        "u": "Necklace Road", "v": "Hussain Sagar", "road_id": "R007", "name": "Necklace Road",
-        "distance_km": 1.2, "geometry": [(17.4276, 78.4717), (17.4260, 78.4725), (17.4250, 78.4730), (17.4239, 78.4738)]
-    },
-    {
-        "u": "Hussain Sagar", "v": "Tank Bund", "road_id": "R008", "name": "Tank Bund Road",
-        "distance_km": 1.4, "geometry": [(17.4239, 78.4738), (17.4200, 78.4745), (17.4170, 78.4750), (17.4143, 78.4760)]
-    },
-    {
-        "u": "Tank Bund", "v": "Lakdi-ka-pul", "road_id": "R009", "name": "Tank Bund Extension",
-        "distance_km": 2.1, "geometry": [(17.4143, 78.4760), (17.4100, 78.4730), (17.4050, 78.4715), (17.4012, 78.4698)]
-    },
-    
-    # IT Corridor Connections
-    {
-        "u": "Begumpet Station", "v": "Hitech City", "road_id": "R010", "name": "Begumpet-Hitech Expressway",
-        "distance_km": 8.8, "geometry": [(17.4486, 78.4691), (17.4480, 78.4600), (17.4485, 78.4500), (17.4490, 78.4400), (17.4485, 78.4300), (17.4483, 78.4200), (17.4483, 78.4100), (17.4483, 78.4000), (17.4483, 78.3908)]
-    },
-    {
-        "u": "Hitech City", "v": "Cyber Towers", "road_id": "R011", "name": "Hitech City Road",
-        "distance_km": 1.2, "geometry": [(17.4483, 78.3908), (17.4490, 78.3850), (17.4496, 78.3799)]
-    },
-    {
-        "u": "Cyber Towers", "v": "Kondapur", "road_id": "R012", "name": "Cyber Towers Road",
-        "distance_km": 2.8, "geometry": [(17.4496, 78.3799), (17.4520, 78.3770), (17.4550, 78.3740), (17.4582, 78.3700)]
-    },
-    {
-        "u": "Kondapur", "v": "Gachibowli", "road_id": "R013", "name": "Gachibowli Road",
-        "distance_km": 3.2, "geometry": [(17.4582, 78.3700), (17.4520, 78.3650), (17.4450, 78.3600), (17.4394, 78.3489)]
-    },
-    {
-        "u": "Hitech City", "v": "Nanakramguda", "road_id": "R014", "name": "Nanakramguda Road",
-        "distance_km": 3.8, "geometry": [(17.4483, 78.3908), (17.4420, 78.3850), (17.4350, 78.3800), (17.4300, 78.3750), (17.4256, 78.3654)]
-    },
-    
-    # South Hyderabad Connections
-    {
-        "u": "Hitech City", "v": "Jubilee Hills", "road_id": "R015", "name": "Road No. 36",
-        "distance_km": 4.2, "geometry": [(17.4483, 78.3908), (17.4440, 78.3950), (17.4390, 78.4000), (17.4350, 78.4035), (17.4310, 78.4070)]
-    },
-    {
-        "u": "Jubilee Hills", "v": "Jubilee Hills Check Post", "road_id": "R016", "name": "Jubilee Hills Road",
-        "distance_km": 2.8, "geometry": [(17.4310, 78.4070), (17.4300, 78.4120), (17.4290, 78.4200), (17.4285, 78.4354)]
-    },
-    {
-        "u": "Jubilee Hills Check Post", "v": "Banjara Hills", "road_id": "R017", "name": "Road No. 45",
-        "distance_km": 1.5, "geometry": [(17.4285, 78.4354), (17.4250, 78.4380), (17.4200, 78.4420), (17.4156, 78.4456)]
-    },
-    {
-        "u": "Banjara Hills", "v": "Panjagutta", "road_id": "R018", "name": "Road No. 12",
-        "distance_km": 1.8, "geometry": [(17.4156, 78.4456), (17.4145, 78.4500), (17.4140, 78.4535), (17.4134, 78.4567)]
-    },
-    {
-        "u": "Panjagutta", "v": "Somajiguda", "road_id": "R019", "name": "Panjagutta Road",
-        "distance_km": 1.2, "geometry": [(17.4134, 78.4567), (17.4125, 78.4620), (17.4115, 78.4650), (17.4108, 78.4678)]
-    },
-    {
-        "u": "Somajiguda", "v": "Necklace Road", "road_id": "R020", "name": "Somajiguda Road",
-        "distance_km": 1.8, "geometry": [(17.4108, 78.4678), (17.4150, 78.4690), (17.4200, 78.4700), (17.4250, 78.4708), (17.4276, 78.4717)]
-    },
-    
-    # Old City Connections
-    {
-        "u": "Tank Bund", "v": "Charminar", "road_id": "R021", "name": "Charminar Road",
-        "distance_km": 6.8, "geometry": [(17.4143, 78.4760), (17.4000, 78.4750), (17.3850, 78.4740), (17.3700, 78.4730), (17.3616, 78.4747)]
-    },
-    {
-        "u": "Charminar", "v": "Madina Circle", "road_id": "R022", "name": "Madina Road",
-        "distance_km": 1.8, "geometry": [(17.3616, 78.4747), (17.3680, 78.4760), (17.3720, 78.4775), (17.3756, 78.4789)]
-    },
-    {
-        "u": "Madina Circle", "v": "MGBS", "road_id": "R023", "name": "MGBS Road",
-        "distance_km": 2.5, "geometry": [(17.3756, 78.4789), (17.3800, 78.4750), (17.3830, 78.4720), (17.3856, 78.4689)]
-    },
-    {
-        "u": "MGBS", "v": "Lakdi-ka-pul", "road_id": "R024", "name": "MGBS-Lakdi Road",
-        "distance_km": 3.2, "geometry": [(17.3856, 78.4689), (17.3950, 78.4690), (17.4050, 78.4695), (17.4012, 78.4698)]
-    },
-    
-    # Cross-connections for better routing
-    {
-        "u": "Nanakramguda", "v": "Jubilee Hills", "road_id": "R025", "name": "Nanakramguda-Jubilee Link",
-        "distance_km": 4.5, "geometry": [(17.4256, 78.3654), (17.4280, 78.3750), (17.4295, 78.3850), (17.4305, 78.3950), (17.4310, 78.4070)]
-    },
-    {
-        "u": "Gachibowli", "v": "Nanakramguda", "road_id": "R026", "name": "Gachibowli-Nanakramguda Link",
-        "distance_km": 2.8, "geometry": [(17.4394, 78.3489), (17.4350, 78.3520), (17.4300, 78.3580), (17.4256, 78.3654)]
-    },
-]
-
-
-def build_graph(nodes: Dict[str, Tuple[float, float]], edges: List[Dict]) -> nx.Graph:
-    """Create an undirected NetworkX graph from provided nodes and edges."""
-    G = nx.Graph()
-    for name, (lat, lon) in nodes.items():
-        G.add_node(name, lat=lat, lon=lon)
-    for e in edges:
-        u = e["u"]
-        v = e["v"]
-        distance_km = e.get("distance_km")
-        if distance_km is None:
-            distance_km = haversine_km(nodes[u], nodes[v])
-        G.add_edge(
-            u,
-            v,
-            road_id=e["road_id"],
-            name=e["name"],
-            distance_km=float(distance_km),
-            geometry=e.get("geometry", [nodes[u], nodes[v]]),
-        )
+    if os.path.exists(file_path):
+        print(f"Loading graph from {file_path}...")
+        G = ox.load_graphml(file_path)
+    else:
+        print("Downloading graph from OSM (this may take a few minutes)...")
+        place = "Hyderabad, Telangana, India"
+        G = ox.graph_from_place(place, network_type="drive", simplify=True)
+        G = ox.add_edge_speeds(G)
+        G = ox.add_edge_travel_times(G)
+        print("Saving graph to disk...")
+        ox.save_graphml(G, file_path)
+        
     return G
 
+@st.cache_data(show_spinner=False)
+def load_edges_geojson(_G: nx.MultiDiGraph) -> str:
+    """Converts graph edges to GeoJSON. Caches to disk."""
+    file_path = "hyderabad_edges.geojson"
+    
+    if os.path.exists(file_path):
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    # We only need the geometry for visualization
+    edges = ox.graph_to_gdfs(_G, nodes=False, edges=True)[["geometry"]]
+    geojson = edges.to_json()
+    
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(geojson)
+        
+    return geojson
 
-GRAPH = build_graph(CITY_NODES, CITY_EDGES)
+# Load data once
+GRAPH = load_graph()
+EDGES_GEOJSON = load_edges_geojson(GRAPH)
 
+# -----------------------------------------------------------------------------
+# Helper Functions
+# -----------------------------------------------------------------------------
+def _point_distance(a: Tuple[float, float], b: Tuple[float, float]) -> float:
+    """Euclidean distance squared (approx) for quick checks."""
+    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
 
-# -------------------------------------------------------------
-# Week 3 & 4: Traffic Data Simulation and Deterministic "Model"
-# - We implement a rule-based predictor that mimics a trained regressor.
-# - Input: hour (0-23), road_id, travel_mode
-# - Output: traffic multiplier for travel time
-# -------------------------------------------------------------
-
-def predict_traffic_multiplier(road_id: str, hour: int, day_of_week: int, travel_mode: str) -> float:
-    """
-    Deterministic rule-based traffic multiplier.
-    Higher multipliers during rush hours (8-10, 17-20) for motor vehicles.
-    Slight variance by road_id to reflect different capacities.
-    Walking is less affected by traffic.
-    """
-    rush_hours_morning = {8, 9, 10}
-    rush_hours_evening = {17, 18, 19, 20}
-    base = 1.0
-
-    # Road capacity factor (stable per road)
-    road_hash = sum(ord(c) for c in road_id)
-    road_factor = 0.9 + (road_hash % 7) * 0.02  # between ~0.9 and ~1.02
-
-    # Mode sensitivity to traffic
-    if travel_mode == "Car":
-        mode_factor = 1.0
-    elif travel_mode == "Bike":
-        mode_factor = 0.9
-    else:  # Walk
-        mode_factor = 0.7
-
-    # Weekday/weekend profile
-    is_weekend = day_of_week in {5, 6}  # Saturday=5, Sunday=6
-    if not is_weekend and (hour in rush_hours_morning or hour in rush_hours_evening):
-        congestion = 1.5  # significant congestion on weekdays at rush hours
-    elif is_weekend and (12 <= hour <= 16):
-        congestion = 1.25  # weekend midday peak
-    elif 7 <= hour <= 22:
-        congestion = 1.15  # moderate daytime traffic
+def _geometry_to_latlon(geometry: Any) -> List[Tuple[float, float]]:
+    """Extracts list of (lat, lon) from Shapely geometry."""
+    if isinstance(geometry, LineString):
+        coords = list(geometry.coords)
+    elif isinstance(geometry, MultiLineString):
+        coords = [pt for line in geometry for pt in line.coords]
+    elif isinstance(geometry, list):
+        coords = geometry
     else:
-        congestion = 0.9  # off-peak/late night
+        return []
+    # Shapely coords are (lon, lat), we want (lat, lon) for Folium
+    return [(lat, lon) for lon, lat in coords]
 
-    multiplier = base * road_factor * (1 + (congestion - 1) * mode_factor)
-    return max(0.7, round(multiplier, 3))
+def orient_geometry(
+    geometry: List[Tuple[float, float]],
+    start_coord: Tuple[float, float],
+    end_coord: Tuple[float, float],
+) -> List[Tuple[float, float]]:
+    """
+    Ensures the geometry points from start_coord to end_coord.
+    Useful because OSM edges might be stored in one direction but traversed in another.
+    """
+    if not geometry:
+        return [start_coord, end_coord]
+    
+    # Check distance of first point to start vs last point to start
+    start_dist = _point_distance(geometry[0], start_coord)
+    end_dist = _point_distance(geometry[-1], start_coord)
+    
+    oriented = geometry if start_dist <= end_dist else list(reversed(geometry))
+    
+    # Snap ends if they are close enough (visual continuity)
+    if _point_distance(oriented[0], start_coord) > 0.0003:
+        oriented = [start_coord] + oriented
+    if _point_distance(oriented[-1], end_coord) > 0.0003:
+        oriented = oriented + [end_coord]
+        
+    return oriented
 
+def get_traffic_multiplier(hour: int, day_idx: int, highway: Any, mode: str) -> float:
+    """Calculates a traffic penalty multiplier based on time, day, and road type."""
+    is_weekend = day_idx in {5, 6}  # Saturday, Sunday
+    
+    # Base traffic based on hour
+    if not is_weekend and (7 <= hour <= 10 or 17 <= hour <= 21):
+        base = 2.4  # Peak hours
+    elif is_weekend and 11 <= hour <= 17:
+        base = 1.6  # Weekend busy time
+    elif 6 <= hour <= 22:
+        base = 1.3  # Normal day
+    else:
+        base = 0.85 # Night/Early morning
+        
+    # Adjust for road type
+    hw = highway if isinstance(highway, str) else (highway[0] if highway else "road")
+    if hw in {"motorway", "trunk"}:
+        base *= 1.05
+    elif hw in {"residential", "living_street"}:
+        base *= 0.9
+        
+    # Adjust for mode
+    mode_factor = {"Car": 1.0, "Bike": 0.65, "Walk": 0.3}[mode]
+    
+    return round(base * mode_factor, 3)
 
-# -------------------------------------------------------------
-# Week 5: Integrate "AI" with Route Planner
-# - Weighted Dijkstra using travel time as weight
-# -------------------------------------------------------------
+def get_traffic_color(multiplier: float) -> str:
+    """Returns a color code based on traffic intensity."""
+    if multiplier >= 2.0:
+        return "red"
+    if multiplier >= 1.5:
+        return "orange"
+    return "blue"
 
-def estimate_travel_time_minutes(distance_km: float, travel_mode: str, multiplier: float) -> float:
-    if travel_mode == "Car":
-        base_speed_kmh = 35.0
-    elif travel_mode == "Bike":
-        base_speed_kmh = 22.0
-    else:  # Walk
-        base_speed_kmh = 5.0
-    hours = distance_km / max(1e-6, base_speed_kmh)
-    minutes = hours * 60.0 * multiplier
-    return minutes
+def compute_time_weight(length_m: float, mode: str, multiplier: float) -> float:
+    """Computes weighted travel time in seconds."""
+    speed = BASE_SPEEDS_MPS[mode]
+    # Time = Distance / Speed. Multiplier increases effective time (simulating traffic).
+    return (length_m / speed) * multiplier
 
+def heuristic(G: nx.MultiDiGraph, u: int, v: int, mode: str) -> float:
+    """
+    Heuristic function for A* algorithm.
+    Estimates the minimum time to travel from u to v.
+    """
+    # Get coordinates
+    x1, y1 = G.nodes[u]['x'], G.nodes[u]['y']
+    x2, y2 = G.nodes[v]['x'], G.nodes[v]['y']
+    
+    # Great circle distance in meters
+    dist_m = ox.distance.great_circle(y1, x1, y2, x2)
+    
+    # Max speed for the mode (optimistic estimate)
+    max_speed = BASE_SPEEDS_MPS[mode]
+    
+    # Heuristic time = Distance / Max_Speed
+    # We use 1.0 as min multiplier for admissibility
+    return dist_m / max_speed
 
-def find_shortest_path(
-    G: nx.Graph,
-    source: str,
-    target: str,
+# -----------------------------------------------------------------------------
+# Pathfinding Algorithm (A*)
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Pathfinding Algorithm (A*)
+# -----------------------------------------------------------------------------
+@st.cache_data(show_spinner=False)
+def traffic_aware_astar_path(
+    _G: nx.MultiDiGraph,
+    source_node: int,
+    target_node: int,
     hour: int,
-    day_of_week: int,
-    travel_mode: str,
-) -> Tuple[Optional[List[str]], float, float, List[Dict]]:
+    day_idx: int,
+    mode: str,
+) -> Tuple[Optional[List[int]], float, float, List[Dict]]:
     """
-    Custom Dijkstra's algorithm (heapq) to minimize travel time.
-    Returns (path_nodes, total_minutes, total_distance_km, segments_meta).
-    segments_meta contains per-edge details for turn-by-turn and mapping.
+    Finds the shortest path using A* algorithm considering traffic factors.
+    Returns: (path_nodes, total_time_min, total_dist_km, segments_info)
     """
-    import heapq
-
-    if source not in G or target not in G:
-        return None, float("inf"), 0.0, []
-    if source == target:
-        return [source], 0.0, 0.0, []
-
-    # Priority queue of (accumulated_minutes, current_node)
-    pq = [(0.0, source)]
-    best_time: Dict[str, float] = {source: 0.0}
-    best_dist: Dict[str, float] = {source: 0.0}
-    prev: Dict[str, Tuple[str, Dict]] = {}
-
-    visited = set()
+    # Priority queue stores (f_score, node)
+    pq = [(0.0, source_node)]
+    
+    # Cost from start to node
+    g_score = {source_node: 0.0}
+    
+    # To reconstruct path: came_from[node] = (parent, edge_key)
+    came_from: Dict[int, Tuple[int, int]] = {}
+    
     while pq:
-        acc_min, node = heapq.heappop(pq)
-        if node in visited:
-            continue
-        visited.add(node)
-        if node == target:
+        current_f, current = heapq.heappop(pq)
+        
+        if current == target_node:
             break
-
-        for neighbor in G.neighbors(node):
-            edge = G.get_edge_data(node, neighbor)
-            # Single-edge graph (no multi-edges). If Graph becomes MultiGraph, handle keys.
-            if not edge:
-                continue
-            road_id = edge.get("road_id", f"{node}-{neighbor}")
-            distance_km = float(edge.get("distance_km", haversine_km(
-                (G.nodes[node]["lat"], G.nodes[node]["lon"]),
-                (G.nodes[neighbor]["lat"], G.nodes[neighbor]["lon"]),
-            )))
-            multiplier = predict_traffic_multiplier(road_id, hour, day_of_week, travel_mode)
-            edge_minutes = estimate_travel_time_minutes(distance_km, travel_mode, multiplier)
-            new_time = acc_min + edge_minutes
-            if neighbor not in best_time or new_time < best_time[neighbor]:
-                best_time[neighbor] = new_time
-                best_dist[neighbor] = best_dist.get(node, 0.0) + distance_km
-                prev[neighbor] = (
-                    node,
-                    {
-                        "from": node,
-                        "to": neighbor,
-                        "road_id": road_id,
-                        "name": edge.get("name", road_id),
-                        "distance_km": distance_km,
-                        "multiplier": multiplier,
-                        "minutes": edge_minutes,
-                        "geometry": edge.get("geometry"),
-                    },
-                )
-                heapq.heappush(pq, (new_time, neighbor))
-
-    if target not in best_time:
+            
+        current_g = g_score[current]
+        
+        # If we found a shorter path to this node already, skip
+        if current_g > g_score.get(current, float('inf')):
+             continue
+        
+        for neighbor, edge_dict in _G.adj[current].items():
+            # Handle multiple edges between nodes (MultiDiGraph)
+            # We pick the one with minimum weight
+            best_edge_key = None
+            min_weight = float('inf')
+            
+            for key, data in edge_dict.items():
+                length = data.get("length", 1.0)
+                highway = data.get("highway", "road")
+                
+                multiplier = get_traffic_multiplier(hour, day_idx, highway, mode)
+                weight = compute_time_weight(length, mode, multiplier)
+                
+                if weight < min_weight:
+                    min_weight = weight
+                    best_edge_key = key
+            
+            tentative_g = current_g + min_weight
+            
+            if tentative_g < g_score.get(neighbor, float('inf')):
+                came_from[neighbor] = (current, best_edge_key)
+                g_score[neighbor] = tentative_g
+                
+                h = heuristic(_G, neighbor, target_node, mode)
+                f = tentative_g + h
+                heapq.heappush(pq, (f, neighbor))
+                
+    if target_node not in came_from and target_node != source_node:
         return None, float("inf"), 0.0, []
-
-    # Reconstruct path and segments
-    path_nodes: List[str] = [target]
-    segments: List[Dict] = []
-    curr = target
-    while curr != source:
-        if curr not in prev:
-            break
-        pnode, meta = prev[curr]
-        segments.append(meta)
-        path_nodes.append(pnode)
-        curr = pnode
-    path_nodes.reverse()
+        
+    # Reconstruct path
+    path = [target_node]
+    node = target_node
+    segments = []
+    total_distance = 0.0
+    
+    while node != source_node:
+        prev, edge_key = came_from[node]
+        edge_data = _G[prev][node][edge_key]
+        
+        length_m = edge_data.get("length", 1.0)
+        highway = edge_data.get("highway", "road")
+        name = edge_data.get("name") or highway
+        if isinstance(name, list):
+            name = name[0] # Handle multiple names
+            
+        geometry = _geometry_to_latlon(edge_data.get("geometry"))
+        multiplier = get_traffic_multiplier(hour, day_idx, highway, mode)
+        travel_seconds = compute_time_weight(length_m, mode, multiplier)
+        
+        # Orientation
+        prev_coord = (_G.nodes[prev]["y"], _G.nodes[prev]["x"])
+        current_coord = (_G.nodes[node]["y"], _G.nodes[node]["x"])
+        oriented_geom = orient_geometry(geometry, prev_coord, current_coord)
+        
+        segments.append({
+            "from": prev,
+            "to": node,
+            "name": str(name),
+            "distance_km": length_m / 1000,
+            "time_min": travel_seconds / 60,
+            "multiplier": multiplier,
+            "geometry": oriented_geom
+        })
+        
+        total_distance += length_m / 1000
+        node = prev
+        path.append(node)
+        
+    path.reverse()
     segments.reverse()
+    total_time_min = g_score[target_node] / 60
+    
+    # Post-process segments to add turn instructions
+    if segments:
+        # Helper to calculate bearing between two points
+        def calculate_bearing(lat1, lon1, lat2, lon2):
+            dLon = math.radians(lon2 - lon1)
+            lat1 = math.radians(lat1)
+            lat2 = math.radians(lat2)
+            y = math.sin(dLon) * math.cos(lat2)
+            x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dLon)
+            return (math.degrees(math.atan2(y, x)) + 360) % 360
 
-    total_minutes = best_time[target]
-    total_distance = best_dist[target]
-    return path_nodes, total_minutes, total_distance, segments
+        # Helper to get turn direction
+        def get_turn_instruction(bearing_in, bearing_out):
+            diff = (bearing_out - bearing_in + 360) % 360
+            if diff < 20 or diff > 340:
+                return "Go straight"
+            elif 20 <= diff < 45:
+                return "Slight right"
+            elif 45 <= diff < 135:
+                return "Turn right"
+            elif 135 <= diff < 225:
+                return "Make a U-turn"
+            elif 225 <= diff < 315:
+                return "Turn left"
+            else: # 315 <= diff < 340
+                return "Slight left"
 
+        # Calculate bearings and turns
+        for i in range(len(segments)):
+            # Get start and end points of the current segment geometry
+            # geometry is list of (lat, lon)
+            p1 = segments[i]["geometry"][0]
+            p2 = segments[i]["geometry"][-1]
+            
+            # Calculate bearing of this segment
+            bearing = calculate_bearing(p1[0], p1[1], p2[0], p2[1])
+            segments[i]["bearing"] = bearing
+            
+            if i == 0:
+                segments[i]["turn"] = "Start"
+            else:
+                prev_bearing = segments[i-1]["bearing"]
+                segments[i]["turn"] = get_turn_instruction(prev_bearing, bearing)
 
-# -------------------------------------------------------------
-# Week 6: Map Visualization with Folium
-# - Only display the final computed route and start/end markers
-# -------------------------------------------------------------
+    return path, total_time_min, total_distance, segments
 
-def render_route_map(
-    G: nx.Graph,
+# -----------------------------------------------------------------------------
+# Visualization
+# -----------------------------------------------------------------------------
+def create_route_map(
+    base_geojson: str,
     segments: List[Dict],
-    start_node: str,
-    end_node: str,
+    start_coord: Tuple[float, float],
+    end_coord: Tuple[float, float],
 ) -> folium.Map:
-    # Compute map center (midpoint between start and end)
-    s_lat, s_lon = G.nodes[start_node]["lat"], G.nodes[start_node]["lon"]
-    e_lat, e_lon = G.nodes[end_node]["lat"], G.nodes[end_node]["lon"]
-    center = ((s_lat + e_lat) / 2.0, (s_lon + e_lon) / 2.0)
-
+    """Creates a Folium map with the calculated route."""
+    center = ((start_coord[0] + end_coord[0]) / 2, (start_coord[1] + end_coord[1]) / 2)
     fmap = folium.Map(location=center, zoom_start=13, control_scale=True, tiles="cartodbpositron")
 
-    # Construct the continuous route shape from all segments
-    route_shape = []
+    # Background road network
+    folium.GeoJson(
+        base_geojson,
+        name="Road network",
+        style_function=lambda _: {"color": "#c9ccd1", "weight": 1, "opacity": 0.45},
+    ).add_to(fmap)
+
+    # Draw segments
+    full_route_coords: List[Tuple[float, float]] = []
     
     for seg in segments:
-        from_node = seg["from"]
-        to_node = seg["to"]
+        color = get_traffic_color(seg["multiplier"])
+        geometry = seg["geometry"]
         
-        # Get the edge data directly from the graph
-        edge_data = G.get_edge_data(from_node, to_node)
-        if edge_data and "geometry" in edge_data:
-            original_geom = edge_data["geometry"]
-            
-            # Check if we need to reverse the geometry based on direction
-            first_point = original_geom[0]
-            from_coord = (G.nodes[from_node]["lat"], G.nodes[from_node]["lon"])
-            
-            # Calculate distance from first geometry point to from_node
-            dist_from_start = ((first_point[0] - from_coord[0])**2 + (first_point[1] - from_coord[1])**2)**0.5
-            
-            if dist_from_start < 0.01:  # If first point is close to from_node, use as-is
-                segment_geom = original_geom
-            else:  # Otherwise, reverse the geometry
-                segment_geom = list(reversed(original_geom))
-            
-            # Add this segment's geometry to the route
-            if route_shape:
-                # Skip the first point if it's the same as the last point
-                if abs(segment_geom[0][0] - route_shape[-1][0]) < 0.0001 and abs(segment_geom[0][1] - route_shape[-1][1]) < 0.0001:
-                    route_shape.extend(segment_geom[1:])
-                else:
-                    route_shape.extend(segment_geom)
+        # Stitching for the continuous line
+        if full_route_coords:
+            # If the start of this segment is close to the end of the last, append
+            if _point_distance(full_route_coords[-1], geometry[0]) < 0.0003:
+                full_route_coords.extend(geometry[1:])
             else:
-                route_shape.extend(segment_geom)
+                full_route_coords.extend(geometry)
         else:
-            # Fallback to straight line if no geometry
-            route_shape.append((G.nodes[from_node]["lat"], G.nodes[from_node]["lon"]))
-            route_shape.append((G.nodes[to_node]["lat"], G.nodes[to_node]["lon"]))
+            full_route_coords.extend(geometry)
 
-    # Draw the single continuous route line
-    if route_shape:
+        # Segment line (colored by traffic)
         folium.PolyLine(
-            route_shape, 
-            color="#1a73e8", 
-            weight=6, 
+            geometry,
+            color=color,
+            weight=6,
             opacity=0.8,
-            popup="Calculated Route"
+            popup=f"{seg['name']} • {seg['distance_km']:.2f} km",
+            tooltip=f"{seg['name']} ({seg['time_min']:.1f} min)"
         ).add_to(fmap)
 
-    # Start and end markers
-    folium.Marker(
-        location=(s_lat, s_lon),
-        popup=f"Start: {start_node}",
-        tooltip="Start",
-        icon=folium.Icon(color="green", icon="play"),
-    ).add_to(fmap)
-    folium.Marker(
-        location=(e_lat, e_lon),
-        popup=f"End: {end_node}",
-        tooltip="End",
-        icon=folium.Icon(color="red", icon="flag"),
-    ).add_to(fmap)
+    # Overlay a smooth continuous line for better visibility
+    if full_route_coords:
+        folium.PolyLine(
+            full_route_coords, 
+            color="#1a73e8", 
+            weight=3, 
+            opacity=0.4,
+            dash_array='5, 10'
+        ).add_to(fmap)
 
+    # Markers
+    folium.Marker(
+        location=start_coord,
+        popup=f"Start: {start_coord}",
+        tooltip="Start",
+        icon=folium.Icon(color="green", icon="play", prefix="fa"),
+    ).add_to(fmap)
+    
+    folium.Marker(
+        location=end_coord,
+        popup=f"End: {end_coord}",
+        tooltip="End",
+        icon=folium.Icon(color="red", icon="flag", prefix="fa"),
+    ).add_to(fmap)
+    
     return fmap
 
-
-# -------------------------------------------------------------
-# Week 7 & 8: Streamlit UI, Testing, and Final Touches
-# -------------------------------------------------------------
-
-st.title("AI-Powered Traffic Predictor and Route Planner")
-st.caption("Miniature urban network in Hyderabad/Secunderabad with a rule-based traffic model")
-
-# Initialize session state for persistent map
-if 'route_map_html' not in st.session_state:
-    st.session_state.route_map_html = None
-if 'last_route_params' not in st.session_state:
-    st.session_state.last_route_params = None
+# -----------------------------------------------------------------------------
+# Main UI
+# -----------------------------------------------------------------------------
+st.title("🗺️ AI-Powered Traffic & Route Planner")
+st.caption("Real Hyderabad road network from OpenStreetMap with A* traffic-aware routing.")
 
 with st.sidebar:
-    st.header("Plan Your Trip")
-    start_location = st.selectbox("Start", options=list(CITY_NODES.keys()), index=0)
-    end_location = st.selectbox("End", options=list(CITY_NODES.keys()), index=10)  # Hitech City
-    hour = st.slider("Hour of day", min_value=0, max_value=23, value=9, step=1)
-    day_of_week = st.selectbox("Day of week (Mon=0)", options=list(range(7)), index=0, help="0=Mon, 6=Sun")
-    travel_mode = st.radio("Travel mode", options=["Car", "Bike", "Walk"], index=0, horizontal=True)
-    go = st.button("Calculate Fastest Route", type="primary", use_container_width=True)
+    st.header("Trip Planner")
+    start_choice = st.selectbox("Start", options=list(LANDMARKS.keys()), index=0)
+    end_choice = st.selectbox("Destination", options=list(LANDMARKS.keys()), index=8)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        hour = st.slider("Hour of day", 0, 23, 9)
+    with col2:
+        day_idx = st.selectbox(
+            "Day",
+            ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+            index=0,
+        )
+        
+    mode = st.radio("Mode", ["Car", "Bike", "Walk"], index=0, horizontal=True)
+    go = st.button("Calculate fastest route", type="primary", use_container_width=True)
 
+# Wrapper for nearest nodes to handle missing scikit-learn
+@st.cache_resource
+def get_kdtree(_G: nx.MultiDiGraph):
+    from scipy.spatial import cKDTree
+    import numpy as np
+    nodes = list(_G.nodes(data=True))
+    coords = np.array([[n[1]['x'], n[1]['y']] for n in nodes])
+    tree = cKDTree(coords)
+    return tree, nodes
 
-col1, col2 = st.columns([0.45, 0.55], gap="large")
+def find_nearest_node(G: nx.MultiDiGraph, lat: float, lon: float) -> int:
+    try:
+        return ox.distance.nearest_nodes(G, X=lon, Y=lat)
+    except ImportError:
+        # Fallback using cached KDTree
+        tree, nodes = get_kdtree(G)
+        dist, idx = tree.query([lon, lat])
+        return nodes[idx][0]
 
-# Check if route parameters have changed
-current_route_params = (start_location, end_location, hour, day_of_week, travel_mode)
-route_params_changed = st.session_state.last_route_params != current_route_params
+# Initialize session state for route data if not present
+if 'route_data' not in st.session_state:
+    st.session_state.route_data = None
 
 if go:
-    if start_location == end_location:
-        with col1:
-            st.info("Start and end are the same. Estimated time is 0 minutes.")
-            st.metric(label="ETA (min)", value="0.0")
-            st.metric(label="Distance (km)", value="0.0")
-        with col2:
-            # Show a small map centered at the point
-            single_map = folium.Map(location=CITY_NODES[start_location], zoom_start=14, tiles="cartodbpositron")
-            folium.Marker(CITY_NODES[start_location], tooltip="Start/End", icon=folium.Icon(color="blue")).add_to(single_map)
-            st.session_state.last_route_params = current_route_params
-            st_folium(single_map, height=520, width=None, key="same_location_map", returned_objects=[])
+    if start_choice == end_choice:
+        st.warning("Pick two different points.")
     else:
-        # Compute best path based on predicted traffic-adjusted travel times
-        path, total_minutes, total_km, segments = find_shortest_path(
-            GRAPH, start_location, end_location, hour, day_of_week, travel_mode
-        )
+        start_coord = LANDMARKS[start_choice]
+        end_coord = LANDMARKS[end_choice]
+        
+        with st.spinner("Finding best path using A* algorithm…"):
+            # Find nearest nodes
+            source_node = find_nearest_node(GRAPH, start_coord[0], start_coord[1])
+            target_node = find_nearest_node(GRAPH, end_coord[0], end_coord[1])
+            
+            # Run A*
+            path_nodes, total_time, total_distance, segments = traffic_aware_astar_path(
+                GRAPH,
+                source_node,
+                target_node,
+                hour,
+                ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].index(day_idx),
+                mode,
+            )
+            
+            if path_nodes:
+                # Get actual snapped coordinates from the graph nodes
+                # This ensures the markers align perfectly with the path start/end
+                snapped_start = (GRAPH.nodes[source_node]['y'], GRAPH.nodes[source_node]['x'])
+                snapped_end = (GRAPH.nodes[target_node]['y'], GRAPH.nodes[target_node]['x'])
+                
+                st.session_state.route_data = {
+                    "segments": segments,
+                    "total_time": total_time,
+                    "total_distance": total_distance,
+                    "start_coord": snapped_start,
+                    "end_coord": snapped_end
+                }
+            else:
+                st.error("No drivable route found. Try a different pair of landmarks.")
+                st.session_state.route_data = None
 
-        if not path:
-            with col1:
-                st.error("No route found between the selected points.")
-            with col2:
-                # Show overview map if no route found
-                all_lats = [lat for lat, _ in CITY_NODES.values()]
-                all_lons = [lon for _, lon in CITY_NODES.values()]
-                center = (sum(all_lats) / len(all_lats), sum(all_lons) / len(all_lons))
-                overview_map = folium.Map(location=center, zoom_start=12, tiles="cartodbpositron")
-                for name, (lat, lon) in CITY_NODES.items():
-                    folium.Marker((lat, lon), popup=name, tooltip=name, icon=folium.Icon(color="gray")).add_to(overview_map)
-                st_folium(overview_map, height=520, width=None, key="no_route_map", returned_objects=[])
-        else:
-            with col1:
-                st.subheader("Results")
-                st.metric(label="ETA (min)", value=f"{total_minutes:.1f}")
-                st.metric(label="Distance (km)", value=f"{total_km:.2f}")
+# Display Logic
+# Unified Display Logic
+st.markdown("### 🗺️ Route Map")
 
-                with st.expander("Turn-by-turn and segment details", expanded=True):
-                    for i, seg in enumerate(segments, start=1):
-                        st.write(
-                            f"{i}. {seg['name']} — {seg['distance_km']:.2f} km, "
-                            f"multiplier {seg['multiplier']:.2f}, {seg['minutes']:.1f} min"
-                        )
-
-                # Conceptual comparison (distance-only vs time-based). We show distance-only ETA as baseline.
-                st.divider()
-                st.caption("Comparison (conceptual): distance-only vs traffic-aware time")
-                # Compute baseline: treat multiplier=1 for all edges and Car baseline speed
-                def baseline_time_minutes(distance_km: float) -> float:
-                    return estimate_travel_time_minutes(distance_km, travel_mode, 1.0)
-                baseline_eta = baseline_time_minutes(total_km)
-                st.write(
-                    f"Baseline (no traffic): ~{baseline_eta:.1f} min vs Traffic-aware: ~{total_minutes:.1f} min"
-                )
-
-            with col2:
-                # Render route map
-                fmap = render_route_map(GRAPH, segments, start_location, end_location)
-                st.session_state.last_route_params = current_route_params
-                st.subheader("Map")
-                st_folium(fmap, height=520, width=None, key="route_map", returned_objects=[])
+# Determine map center and zoom
+if st.session_state.route_data:
+    data = st.session_state.route_data
+    start_c = data['start_coord']
+    end_c = data['end_coord']
+    segments = data['segments']
 else:
-    with col1:
-        st.info("Set your start/end, choose hour and mode, then click Calculate Fastest Route.")
-    with col2:
-        # Display a neutral city overview map
-        all_lats = [lat for lat, _ in CITY_NODES.values()]
-        all_lons = [lon for _, lon in CITY_NODES.values()]
-        center = (sum(all_lats) / len(all_lats), sum(all_lons) / len(all_lons))
-        overview_map = folium.Map(location=center, zoom_start=12, tiles="cartodbpositron")
-        
-        # Add location markers
-        for name, (lat, lon) in CITY_NODES.items():
-            folium.Marker((lat, lon), popup=name, tooltip=name, icon=folium.Icon(color="gray")).add_to(overview_map)
-        
-        st_folium(overview_map, height=520, width=None, key="overview_map", returned_objects=[])
+    start_c = LANDMARKS[start_choice]
+    end_c = LANDMARKS[end_choice]
+    segments = None
 
+center = ((start_c[0] + end_c[0]) / 2, (start_c[1] + end_c[1]) / 2)
+m = folium.Map(location=center, zoom_start=13, tiles="cartodbpositron")
 
+# Add Road Network
+# Add Road Network - REMOVED for performance
+# The base tiles (CartoDB Positron) already show the road network clearly.
+# Adding the full GeoJSON overlay was causing rendering delays and visibility issues.
+pass
+
+# Add Route if available
+if segments:
+    full_route_coords = []
+    for seg in segments:
+        color = get_traffic_color(seg["multiplier"])
+        geometry = seg["geometry"]
+        
+        # Stitching
+        if full_route_coords:
+            if _point_distance(full_route_coords[-1], geometry[0]) < 0.0003:
+                full_route_coords.extend(geometry[1:])
+            else:
+                full_route_coords.extend(geometry)
+        else:
+            full_route_coords.extend(geometry)
+
+        # Segment line
+        folium.PolyLine(
+            geometry,
+            color=color,
+            weight=6,
+            opacity=0.8,
+            popup=f"{seg['name']} • {seg['distance_km']:.2f} km",
+            tooltip=f"{seg['name']} ({seg['time_min']:.1f} min)"
+        ).add_to(m)
+
+    # Continuous line overlay
+    if full_route_coords:
+        folium.PolyLine(
+            full_route_coords, 
+            color="#1a73e8", 
+            weight=3, 
+            opacity=0.4,
+            dash_array='5, 10'
+        ).add_to(m)
+
+# Add Markers
+folium.Marker(location=start_c, popup="Start", icon=folium.Icon(color="green", icon="play", prefix="fa")).add_to(m)
+folium.Marker(location=end_c, popup="Destination", icon=folium.Icon(color="red", icon="flag", prefix="fa")).add_to(m)
+
+# Render Map
+st_folium(m, height=500, width=None, key="main_map", returned_objects=[])
+
+# Metrics and Directions (only if route exists)
+if st.session_state.route_data:
+    data = st.session_state.route_data
+    
+    # Metrics Row
+    m1, m2, m3 = st.columns(3)
+    with m1:
+        st.metric("ETA", f"{data['total_time']:.1f} min")
+    with m2:
+        st.metric("Distance", f"{data['total_distance']:.1f} km")
+    with m3:
+        st.metric("Traffic Level", "High" if data['total_time'] / (data['total_distance'] or 1) > 2 else "Normal")
+
+    # Directions Section
+    st.markdown("### ↪️ Turn-by-turn Directions")
+    with st.container(height=400):
+        for i, seg in enumerate(data['segments'], 1):
+            color = get_traffic_color(seg["multiplier"])
+            icon = "🔴" if color == "red" else ("🟠" if color == "orange" else "🔵")
+            
+            # Format Distance
+            dist_km = seg['distance_km']
+            if dist_km < 1.0:
+                dist_str = f"{int(dist_km * 1000)} m"
+            else:
+                dist_str = f"{dist_km:.2f} km"
+                
+            # Format Time
+            time_min = seg['time_min']
+            mins = int(time_min)
+            secs = int((time_min - mins) * 60)
+            if mins > 0:
+                time_str = f"{mins} min {secs} sec"
+            else:
+                time_str = f"{secs} sec"
+                
+            # Turn Instruction
+            turn = seg.get("turn", "Go")
+            road_name = seg['name']
+            instruction = f"**{turn}** onto **{road_name}**" if turn != "Start" else f"Start at **{road_name}**"
+            
+            c1, c2 = st.columns([0.05, 0.95])
+            with c1:
+                st.write(f"**{i}.**")
+            with c2:
+                st.markdown(
+                    f"{instruction}  \n"
+                    f"_{dist_str}_ · _{time_str}_ · {icon}"
+                )
+            st.divider()
+else:
+    st.info("Choose landmarks, time, and mode, then click Calculate.")

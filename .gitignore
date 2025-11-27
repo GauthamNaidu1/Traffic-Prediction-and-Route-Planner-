@@ -1,0 +1,16 @@
+# Large data files
+*.graphml
+*.geojson
+cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+
+# IDE
+.vscode/
+.idea/
