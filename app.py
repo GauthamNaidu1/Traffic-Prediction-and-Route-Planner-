@@ -77,23 +77,72 @@ def get_traffic_level_label(multiplier: float) -> str:
 # -----------------------------------------------------------------------------
 # Data Loading
 # -----------------------------------------------------------------------------
-@st.cache_resource(show_spinner="Loading Hyderabad road network (this may take time on first run)...")
+def build_default_road_network() -> nx.MultiDiGraph:
+    """Constructs a connected Hyderabad road network graph connecting all landmarks."""
+    from shapely.geometry import LineString
+    G = nx.MultiDiGraph()
+    G.graph['crs'] = 'epsg:4326'
+    name_to_id = {}
+    for idx, (name, (lat, lon)) in enumerate(LANDMARKS.items(), start=1):
+        G.add_node(idx, name=name, x=lon, y=lat, osmid=idx)
+        name_to_id[name] = idx
+
+    default_corridors = [
+        ("Secunderabad Railway Station", "Paradise Circle", 1800.0, "trunk"),
+        ("Paradise Circle", "Begumpet", 2100.0, "primary"),
+        ("Begumpet", "Begumpet Metro", 900.0, "primary"),
+        ("Begumpet Metro", "Ameerpet", 1800.0, "primary"),
+        ("Ameerpet", "Punjagutta X Roads", 1500.0, "primary"),
+        ("Punjagutta X Roads", "Somajiguda", 1200.0, "primary"),
+        ("Somajiguda", "Khairatabad", 1300.0, "primary"),
+        ("Khairatabad", "Lakdi-ka-pul", 1100.0, "primary"),
+        ("Lakdi-ka-pul", "Nampally", 1200.0, "primary"),
+        ("Nampally", "Koti", 2200.0, "primary"),
+        ("Koti", "Charminar", 2800.0, "primary"),
+        ("Lakdi-ka-pul", "NTR Gardens", 1500.0, "secondary"),
+        ("NTR Gardens", "Tank Bund", 1200.0, "secondary"),
+        ("Tank Bund", "Necklace Road", 1600.0, "secondary"),
+        ("Necklace Road", "Begumpet", 2400.0, "secondary"),
+        ("Punjagutta X Roads", "Banjara Hills", 1400.0, "secondary"),
+        ("Banjara Hills", "Jubilee Hills Check Post", 2600.0, "primary"),
+        ("Jubilee Hills Check Post", "Madhapur", 3200.0, "primary"),
+        ("Madhapur", "Hitech City", 1500.0, "primary"),
+        ("Hitech City", "Cyber Towers", 1100.0, "primary"),
+        ("Cyber Towers", "Kondapur", 2500.0, "primary"),
+        ("Kondapur", "Gachibowli", 3000.0, "primary"),
+        ("Gachibowli", "Financial District", 2800.0, "trunk"),
+        ("Financial District", "Raidurg", 2500.0, "trunk"),
+        ("Raidurg", "Madhapur", 2100.0, "primary"),
+        ("Hitech City", "Begumpet", 8800.0, "motorway"),
+        ("Tank Bund", "Charminar", 6800.0, "primary"),
+        ("Jubilee Hills Check Post", "Ameerpet", 3500.0, "primary"),
+    ]
+
+    for u_name, v_name, length, hw in default_corridors:
+        if u_name in name_to_id and v_name in name_to_id:
+            u, v = name_to_id[u_name], name_to_id[v_name]
+            u_coord, v_coord = LANDMARKS[u_name], LANDMARKS[v_name]
+            geom = LineString([(u_coord[1], u_coord[0]), (v_coord[1], v_coord[0])])
+            G.add_edge(u, v, key=0, length=length, highway=hw, speed_kph=40.0, travel_time=length / 11.1, geometry=geom)
+            G.add_edge(v, u, key=0, length=length, highway=hw, speed_kph=40.0, travel_time=length / 11.1, geometry=geom)
+    return G
+
+@st.cache_resource(show_spinner="Loading Hyderabad road network...")
 def load_graph() -> nx.MultiDiGraph:
     """Loads the drive network for Hyderabad. Caches to disk for speed."""
     file_path = "hyderabad_drive.graphml"
     
     if os.path.exists(file_path):
-        print(f"Loading graph from {file_path}...")
-        G = ox.load_graphml(file_path)
-    else:
-        print("Downloading graph from OSM (this may take a few minutes)...")
-        place = "Hyderabad, Telangana, India"
-        G = ox.graph_from_place(place, network_type="drive", simplify=True)
-        G = ox.add_edge_speeds(G)
-        G = ox.add_edge_travel_times(G)
-        print("Saving graph to disk...")
+        try:
+            return ox.load_graphml(file_path)
+        except Exception:
+            pass
+
+    G = build_default_road_network()
+    try:
         ox.save_graphml(G, file_path)
-        
+    except Exception:
+        pass
     return G
 
 @st.cache_data(show_spinner=False)
@@ -221,18 +270,57 @@ def predict_volume_and_base_multiplier(model: Any, hour: int, day_idx: int) -> T
     Predicts hourly traffic volume using the trained calendar ML model,
     then converts volume into a base travel-time multiplier via the 90th-percentile formula.
     """
-    row = pd.DataFrame([{
-        "hour_sin": np.sin(2 * np.pi * hour / 24.0),
-        "hour_cos": np.cos(2 * np.pi * hour / 24.0),
-        "day_of_week": day_idx,
-        "is_weekend": int(day_idx in {5, 6}),
-        "is_holiday": 0,
-    }])[["hour_sin", "hour_cos", "day_of_week", "is_weekend", "is_holiday"]]
+    if hasattr(model, "n_features_in_") and model.n_features_in_ == 8:
+        row = pd.DataFrame([{
+            "hour_sin": np.sin(2 * np.pi * hour / 24.0),
+            "hour_cos": np.cos(2 * np.pi * hour / 24.0),
+            "day_of_week": day_idx,
+            "is_weekend": int(day_idx in {5, 6}),
+            "is_us_holiday": 0,
+            "days_to_nearest_holiday": 15.0,
+            "is_day_before_holiday": 0,
+            "is_day_after_holiday": 0,
+        }])
+    else:
+        row = pd.DataFrame([{
+            "hour_sin": np.sin(2 * np.pi * hour / 24.0),
+            "hour_cos": np.cos(2 * np.pi * hour / 24.0),
+            "day_of_week": day_idx,
+            "is_weekend": int(day_idx in {5, 6}),
+            "is_holiday": 0,
+        }])[["hour_sin", "hour_cos", "day_of_week", "is_weekend", "is_holiday"]]
     
     pred_vol = float(model.predict(row)[0])
     norm_vol = max(0.0, pred_vol) / V_90_TRAIN
     base_mult = float(np.clip(0.85 + 1.60 * norm_vol, 0.85, 2.50))
     return pred_vol, base_mult
+
+MODEL_VAL_MAE: float = 285.01  # Validation MAE in vehicles/hour from results/metrics.json
+
+def compute_travel_time_range(
+    total_time_min: float,
+    pred_vol: Optional[float] = None,
+    base_mult: Optional[float] = None,
+) -> Tuple[float, float]:
+    """
+    Computes an estimated travel time range using the model's validation MAE (285.01 veh/h).
+    Returns (low_min, high_min) in minutes, clearly representing an uncertainty estimate.
+    """
+    if total_time_min <= 0.0:
+        return 0.0, 0.0
+    if pred_vol is not None and base_mult is not None and base_mult > 0:
+        v_low = max(0.0, pred_vol - MODEL_VAL_MAE)
+        v_high = pred_vol + MODEL_VAL_MAE
+        m_low = float(np.clip(0.85 + 1.60 * (v_low / V_90_TRAIN), 0.85, 2.50))
+        m_high = float(np.clip(0.85 + 1.60 * (v_high / V_90_TRAIN), 0.85, 2.50))
+        t_low = total_time_min * (m_low / base_mult)
+        t_high = total_time_min * (m_high / base_mult)
+    else:
+        # Default relative uncertainty based on validation MAE (delta_mult / typical_mult ~ 6%)
+        rel_delta = (1.60 * (MODEL_VAL_MAE / V_90_TRAIN)) / 1.30
+        t_low = max(0.0, total_time_min * (1.0 - rel_delta))
+        t_high = total_time_min * (1.0 + rel_delta)
+    return max(0.1, round(t_low, 1)), round(t_high, 1)
 
 def adjust_multiplier(base_multiplier: float, highway: Any, mode: str) -> float:
     """Applies road type adjustment and travel mode scaling to base multiplier."""
@@ -311,6 +399,8 @@ def heuristic(G: nx.MultiDiGraph, u: int, v: int, mode: str) -> float:
 # -----------------------------------------------------------------------------
 # Pathfinding Algorithm (A*)
 # -----------------------------------------------------------------------------
+_MODEL_DEFAULT = object()
+
 @st.cache_data(show_spinner=False)
 def traffic_aware_astar_path(
     _G: nx.MultiDiGraph,
@@ -320,15 +410,19 @@ def traffic_aware_astar_path(
     day_idx: int,
     mode: str,
     predictor_type: str = "Trained model",
-    _model: Any = None,
+    _model: Any = _MODEL_DEFAULT,
 ) -> Tuple[Optional[List[int]], float, float, List[Dict]]:
     """
     Finds the shortest path using A* algorithm considering traffic factors.
     Supports either the trained ML model or the rule-based baseline.
     Returns: (path_nodes, total_time_min, total_dist_km, segments_info)
     """
+    # Handle edge case where origin and destination are the same node
+    if source_node == target_node:
+        return [source_node], 0.0, 0.0, []
+
     # Precompute base multiplier once if using trained model
-    model_to_use = _model if _model is not None else TRAFFIC_MODEL
+    model_to_use = TRAFFIC_MODEL if _model is _MODEL_DEFAULT else _model
     use_model = (predictor_type == "Trained model" and model_to_use is not None)
     if use_model:
         _, base_mult = predict_volume_and_base_multiplier(model_to_use, hour, day_idx)
@@ -556,10 +650,95 @@ def create_route_map(
         location=end_coord,
         popup=f"End: {end_coord}",
         tooltip="End",
-        icon=folium.Icon(color="red", icon="flag", prefix="fa"),
     ).add_to(fmap)
     
     return fmap
+
+def build_route_map(
+    segments: Optional[List[Dict]],
+    start_coord: Tuple[float, float],
+    end_coord: Tuple[float, float],
+) -> folium.Map:
+    """Creates a clean, responsive Folium map for the route (or landmarks)."""
+    center = ((start_coord[0] + end_coord[0]) / 2, (start_coord[1] + end_coord[1]) / 2)
+    fmap = folium.Map(
+        location=center,
+        zoom_start=13,
+        control_scale=True,
+        tiles="https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        attr="&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors",
+    )
+
+    if segments:
+        full_route_coords: List[Tuple[float, float]] = []
+        for seg in segments:
+            color = get_traffic_color(seg["multiplier"])
+            geometry = seg["geometry"]
+            if full_route_coords:
+                if _point_distance(full_route_coords[-1], geometry[0]) < 0.0003:
+                    full_route_coords.extend(geometry[1:])
+                else:
+                    full_route_coords.extend(geometry)
+            else:
+                full_route_coords.extend(geometry)
+
+            folium.PolyLine(
+                geometry,
+                color=color,
+                weight=6,
+                opacity=0.8,
+                popup=f"{seg['name']} • {seg['distance_km']:.2f} km",
+                tooltip=f"{seg['name']} ({seg['time_min']:.1f} min)",
+            ).add_to(fmap)
+
+        if full_route_coords:
+            folium.PolyLine(
+                full_route_coords,
+                color="#1a73e8",
+                weight=3,
+                opacity=0.4,
+                dash_array="5, 10",
+            ).add_to(fmap)
+
+    folium.Marker(
+        location=start_coord,
+        popup=f"Start: {start_coord}",
+        tooltip="Start",
+        icon=folium.Icon(color="green", icon="play", prefix="fa"),
+    ).add_to(fmap)
+
+    folium.Marker(
+        location=end_coord,
+        popup=f"Destination: {end_coord}",
+        tooltip="Destination",
+        icon=folium.Icon(color="red", icon="flag", prefix="fa"),
+    ).add_to(fmap)
+
+    return fmap
+
+def render_directions(segments: List[Dict]) -> None:
+    """Renders turn-by-turn directions with a responsive layout for phone and desktop screens."""
+    for i, seg in enumerate(segments, 1):
+        color = get_traffic_color(seg["multiplier"])
+        icon = "🔴" if color == "red" else ("🟠" if color == "orange" else "🔵")
+
+        dist_km = seg["distance_km"]
+        dist_str = f"{int(dist_km * 1000)} m" if dist_km < 1.0 else f"{dist_km:.2f} km"
+
+        time_min = seg["time_min"]
+        mins = int(time_min)
+        secs = int((time_min - mins) * 60)
+        time_str = f"{mins} min {secs} sec" if mins > 0 else f"{secs} sec"
+
+        turn = seg.get("turn", "Go")
+        road_name = seg["name"]
+        instruction = f"**{turn}** onto **{road_name}**" if turn != "Start" else f"Start at **{road_name}**"
+
+        st.markdown(
+            f"**{i}.** {instruction}  \n"
+            f"&nbsp;&nbsp;&nbsp;&nbsp;_{dist_str}_ · _{time_str}_ · {icon}"
+        )
+        st.divider()
 
 # -----------------------------------------------------------------------------
 # Main UI
@@ -567,11 +746,50 @@ def create_route_map(
 st.title("🗺️ Traffic-Aware Route Planner")
 st.caption("A* travel-time routing across Hyderabad landmarks with congestion predictions from highway traffic data.")
 
+# Responsive styling injection for phone-width and mobile screens
+st.markdown(
+    """
+    <style>
+    /* Phone-width and responsive layout optimizations */
+    @media (max-width: 768px) {
+        .block-container {
+            padding-top: 1.5rem !important;
+            padding-left: 0.8rem !important;
+            padding-right: 0.8rem !important;
+            padding-bottom: 2rem !important;
+        }
+        [data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap !important;
+            gap: 0.75rem !important;
+        }
+        [data-testid="column"] {
+            flex: 1 1 100% !important;
+            min-width: 100% !important;
+        }
+        [data-testid="stMetric"] {
+            background-color: rgba(128, 128, 128, 0.05);
+            border: 1px solid rgba(128, 128, 128, 0.15);
+            border-radius: 8px;
+            padding: 8px 12px;
+            margin-bottom: 6px;
+        }
+        iframe {
+            max-width: 100% !important;
+            border-radius: 8px;
+        }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 with st.sidebar:
     st.header("Trip Planner")
     start_choice = st.selectbox("Start", options=list(LANDMARKS.keys()), index=0)
     end_choice = st.selectbox("Destination", options=list(LANDMARKS.keys()), index=8)
-    
+    if start_choice == end_choice:
+        st.info("ℹ️ Origin and destination are the same. Please select two different landmarks.")
+
     col1, col2 = st.columns(2)
     with col1:
         hour = st.slider("Hour of day", 0, 23, 9)
@@ -581,19 +799,29 @@ with st.sidebar:
             ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
             index=0,
         )
-        
+
     mode = st.radio("Mode", ["Car", "Bike", "Walk"], index=0, horizontal=True)
 
     st.markdown("---")
     st.subheader("Traffic Predictor Engine")
+
+    # Engine Comparison Toggle
+    compare_toggle = st.toggle(
+        "Show both engines side-by-side",
+        value=st.session_state.get("compare_both", False),
+        key="compare_both_toggle",
+        help="Compare results from both the Trained ML model and Rule-based baseline side by side for the same trip.",
+    )
+    st.session_state.compare_both = compare_toggle
+
     predictor_choice = st.radio(
-        "Engine Choice",
+        "Primary Engine Choice",
         ["Trained model", "Rule-based baseline"],
         index=0,
-        help="Compare the trained Gradient Boosting model against the deterministic rule-based baseline function."
+        help="Select the predictor engine to view on the primary map.",
     )
     st.caption("Demo: congestion model trained on public highway data; travel times are simulated estimates.")
-    
+
     if predictor_choice == "Trained model" and TRAFFIC_MODEL is None:
         st.warning("⚠️ Model file 'models/traffic_model.joblib' not found. Falling back to Rule-based baseline.")
         effective_predictor = "Rule-based baseline"
@@ -632,179 +860,249 @@ def find_nearest_node(G: nx.MultiDiGraph, lat: float, lon: float) -> int:
         dist, idx = tree.query([lon, lat])
         return nodes[idx][0]
 
-# Initialize session state for route data if not present
-if 'route_data' not in st.session_state:
+def compute_engine_result(
+    engine_name: str,
+    source_node: int,
+    target_node: int,
+    hour: int,
+    day_num: int,
+    mode: str,
+    snapped_start: Tuple[float, float],
+    snapped_end: Tuple[float, float],
+) -> Optional[Dict[str, Any]]:
+    """Calculates route, estimated travel-time uncertainty range, and summary metrics for an engine."""
+    if engine_name == "Trained model" and TRAFFIC_MODEL is None:
+        actual_engine = "Rule-based baseline"
+        model_to_use = None
+    else:
+        actual_engine = engine_name
+        model_to_use = TRAFFIC_MODEL if engine_name == "Trained model" else None
+
+    path_nodes, total_time, total_distance, segments = traffic_aware_astar_path(
+        GRAPH,
+        source_node,
+        target_node,
+        hour,
+        day_num,
+        mode,
+        predictor_type=actual_engine,
+        _model=model_to_use,
+    )
+
+    if not path_nodes:
+        return None
+
+    if actual_engine == "Trained model" and model_to_use is not None:
+        pred_vol, base_mult = predict_volume_and_base_multiplier(model_to_use, hour, day_num)
+        level_label = get_traffic_level_label(base_mult)
+        time_low, time_high = compute_travel_time_range(total_time, pred_vol, base_mult)
+    else:
+        dummy_mult = get_traffic_multiplier(hour, day_num, "road", "Car")
+        level_label = get_traffic_level_label(dummy_mult)
+        time_low, time_high = compute_travel_time_range(total_time, None, None)
+
+    return {
+        "engine": engine_name,
+        "effective_engine": actual_engine,
+        "path_nodes": path_nodes,
+        "total_time": total_time,
+        "total_distance": total_distance,
+        "segments": segments,
+        "time_range": (time_low, time_high),
+        "traffic_level": level_label,
+        "start_coord": snapped_start,
+        "end_coord": snapped_end,
+    }
+
+# Initialize session state for persistent results across sidebar interactions
+if "both_results" not in st.session_state:
+    st.session_state.both_results = None
+if "route_data" not in st.session_state:
     st.session_state.route_data = None
+if "trip_params" not in st.session_state:
+    st.session_state.trip_params = None
+if "calc_id" not in st.session_state:
+    st.session_state.calc_id = None
 
 if go:
     if start_choice == end_choice:
-        st.warning("Pick two different points.")
+        st.info("ℹ️ Origin and destination are the same landmark. Travel time is 0 minutes. Please select different start and destination landmarks to calculate a route.")
+        st.session_state.both_results = None
+        st.session_state.route_data = None
+        st.session_state.trip_params = None
+        st.session_state.calc_id = None
     else:
         start_coord = LANDMARKS[start_choice]
         end_coord = LANDMARKS[end_choice]
-        
-        with st.spinner("Finding best path using A* algorithm…"):
-            # Find nearest nodes
+
+        with st.spinner("Finding best route using A* algorithm…"):
             source_node = find_nearest_node(GRAPH, start_coord[0], start_coord[1])
             target_node = find_nearest_node(GRAPH, end_coord[0], end_coord[1])
-            
-            # Run A*
-            path_nodes, total_time, total_distance, segments = traffic_aware_astar_path(
-                GRAPH,
-                source_node,
-                target_node,
-                hour,
-                day_num,
-                mode,
-                predictor_type=effective_predictor,
-                _model=TRAFFIC_MODEL,
+            snapped_start = (GRAPH.nodes[source_node]['y'], GRAPH.nodes[source_node]['x'])
+            snapped_end = (GRAPH.nodes[target_node]['y'], GRAPH.nodes[target_node]['x'])
+
+            res_trained = compute_engine_result(
+                "Trained model", source_node, target_node, hour, day_num, mode, snapped_start, snapped_end
             )
-            
-            if path_nodes:
-                # Get actual snapped coordinates from the graph nodes
-                # This ensures the markers align perfectly with the path start/end
-                snapped_start = (GRAPH.nodes[source_node]['y'], GRAPH.nodes[source_node]['x'])
-                snapped_end = (GRAPH.nodes[target_node]['y'], GRAPH.nodes[target_node]['x'])
-                
-                st.session_state.route_data = {
-                    "segments": segments,
-                    "total_time": total_time,
-                    "total_distance": total_distance,
-                    "start_coord": snapped_start,
-                    "end_coord": snapped_end,
-                    "predictor": effective_predictor,
+            res_baseline = compute_engine_result(
+                "Rule-based baseline", source_node, target_node, hour, day_num, mode, snapped_start, snapped_end
+            )
+
+            if (res_trained and res_trained["path_nodes"]) or (res_baseline and res_baseline["path_nodes"]):
+                st.session_state.both_results = {
+                    "Trained model": res_trained,
+                    "Rule-based baseline": res_baseline,
                 }
+                st.session_state.trip_params = {
+                    "start": start_choice,
+                    "end": end_choice,
+                    "hour": hour,
+                    "day": day_idx,
+                    "mode": mode,
+                }
+                st.session_state.calc_id = f"{start_choice}_{end_choice}_{hour}_{day_num}_{mode}"
+                st.session_state.route_data = st.session_state.both_results.get(effective_predictor)
             else:
                 st.error("No drivable route found. Try a different pair of landmarks.")
+                st.session_state.both_results = None
                 st.session_state.route_data = None
+                st.session_state.trip_params = None
+                st.session_state.calc_id = None
 
-# Display Logic
-# Unified Display Logic
-st.markdown("### 🗺️ Route Map")
+# Update route_data in session state if active engine changes in sidebar
+if st.session_state.both_results and effective_predictor in st.session_state.both_results:
+    st.session_state.route_data = st.session_state.both_results.get(effective_predictor)
 
-# Determine map center and zoom
-if st.session_state.route_data:
-    data = st.session_state.route_data
-    start_c = data['start_coord']
-    end_c = data['end_coord']
-    segments = data['segments']
+# Display Trip Status & Parameter Change Hints
+if st.session_state.trip_params:
+    saved = st.session_state.trip_params
+    if (saved["start"] != start_choice or saved["end"] != end_choice or
+        saved["hour"] != hour or saved["day"] != day_idx or saved["mode"] != mode):
+        st.caption(f"📍 Displaying calculated route for **{saved['start']} ➔ {saved['end']}** ({saved['mode']}, {saved['day']} at {saved['hour']}:00). Click 'Calculate fastest route' in the sidebar to recompute.")
+
+# Route Map & Results Display Logic
+if st.session_state.both_results:
+    calc_key = st.session_state.get("calc_id", "init")
+
+    if compare_toggle:
+        # ---------------------------------------------------------------------
+        # Side-by-Side Comparison View for the Same Trip
+        # ---------------------------------------------------------------------
+        st.markdown("### ⚖️ Side-by-Side Engine Comparison")
+        saved_trip = st.session_state.trip_params or {"start": start_choice, "end": end_choice, "hour": hour, "day": day_idx, "mode": mode}
+        st.caption(f"Comparing engines for trip: **{saved_trip['start']}** ➔ **{saved_trip['end']}** ({saved_trip['mode']} on {saved_trip['day']} at {saved_trip['hour']}:00)")
+
+        res_trained = st.session_state.both_results.get("Trained model")
+        res_baseline = st.session_state.both_results.get("Rule-based baseline")
+
+        if res_trained and res_baseline:
+            diff_t = res_trained["total_time"] - res_baseline["total_time"]
+            if abs(diff_t) < 0.1:
+                comp_summary = "Both engines estimate approximately equal travel times for this route."
+            elif diff_t < 0:
+                comp_summary = f"🤖 Trained ML model estimates **{abs(diff_t):.1f} min faster** travel time than ⚙️ Rule-based baseline."
+            else:
+                comp_summary = f"⚙️ Rule-based baseline estimates **{abs(diff_t):.1f} min faster** travel time than 🤖 Trained ML model."
+            st.info(f"💡 **Comparison Summary**: {comp_summary}")
+
+        col_left, col_right = st.columns(2)
+
+        with col_left:
+            st.markdown("#### 🤖 Trained Model (ML)")
+            if res_trained:
+                t_low, t_high = res_trained["time_range"]
+                mc1, mc2, mc3 = st.columns(3)
+                with mc1:
+                    st.metric(
+                        label="Estimated Travel Time (estimate)",
+                        value=f"{t_low:.1f} – {t_high:.1f} min",
+                        delta=f"Expected: {res_trained['total_time']:.1f} min",
+                        delta_color="off",
+                        help="Estimated travel time range based on validation MAE uncertainty (±285.01 veh/h). Point estimate is simulated.",
+                    )
+                with mc2:
+                    st.metric("Distance", f"{res_trained['total_distance']:.1f} km")
+                with mc3:
+                    st.metric("Traffic Level", res_trained.get("traffic_level", "Normal"))
+
+                m_trained = build_route_map(res_trained["segments"], res_trained["start_coord"], res_trained["end_coord"])
+                st_folium(m_trained, height=380, use_container_width=True, key=f"map_trained_{calc_key}", returned_objects=[])
+                st.caption("Route calculated with Trained ML congestion model.")
+
+                with st.expander(f"↪️ Turn-by-turn Directions ({len(res_trained['segments'])} segments)", expanded=False):
+                    with st.container(height=300):
+                        render_directions(res_trained["segments"])
+
+        with col_right:
+            st.markdown("#### ⚙️ Rule-based Baseline")
+            if res_baseline:
+                t_low, t_high = res_baseline["time_range"]
+                mc1, mc2, mc3 = st.columns(3)
+                with mc1:
+                    st.metric(
+                        label="Estimated Travel Time (estimate)",
+                        value=f"{t_low:.1f} – {t_high:.1f} min",
+                        delta=f"Expected: {res_baseline['total_time']:.1f} min",
+                        delta_color="off",
+                        help="Estimated travel time range based on validation MAE uncertainty (±285.01 veh/h). Point estimate is simulated.",
+                    )
+                with mc2:
+                    st.metric("Distance", f"{res_baseline['total_distance']:.1f} km")
+                with mc3:
+                    st.metric("Traffic Level", res_baseline.get("traffic_level", "Normal"))
+
+                m_baseline = build_route_map(res_baseline["segments"], res_baseline["start_coord"], res_baseline["end_coord"])
+                st_folium(m_baseline, height=380, use_container_width=True, key=f"map_baseline_{calc_key}", returned_objects=[])
+                st.caption("Route calculated with Heuristic Rule-based baseline.")
+
+                with st.expander(f"↪️ Turn-by-turn Directions ({len(res_baseline['segments'])} segments)", expanded=False):
+                    with st.container(height=300):
+                        render_directions(res_baseline["segments"])
+
+    else:
+        # ---------------------------------------------------------------------
+        # Single Engine Primary View
+        # ---------------------------------------------------------------------
+        st.markdown("### 🗺️ Route Map")
+        data = st.session_state.route_data or st.session_state.both_results.get(effective_predictor)
+
+        m = build_route_map(data["segments"], data["start_coord"], data["end_coord"])
+        st_folium(m, height=450, use_container_width=True, key=f"main_map_{calc_key}", returned_objects=[])
+        st.caption("Schematic route on a simplified network.")
+
+        t_low, t_high = data.get("time_range", compute_travel_time_range(data["total_time"]))
+        m1, m2, m3, m4 = st.columns([1.2, 0.9, 0.9, 1.0])
+        with m1:
+            st.metric(
+                label="Estimated Travel Time (estimate)",
+                value=f"{t_low:.1f} – {t_high:.1f} min",
+                delta=f"Expected: {data['total_time']:.1f} min",
+                delta_color="off",
+                help="Estimated travel time range based on validation MAE uncertainty (±285.01 veh/h). Point estimate is simulated.",
+            )
+        with m2:
+            st.metric("Distance", f"{data['total_distance']:.1f} km")
+        with m3:
+            st.metric("Traffic Level", data.get("traffic_level", "Normal"))
+        with m4:
+            st.metric("Predictor Engine", data.get("effective_engine", data.get("predictor", "Trained model")))
+
+        st.caption("⏱️ **Travel Time Range (estimate)**: Based on model validation MAE uncertainty (±285.01 veh/h).")
+
+        st.markdown("### ↪️ Turn-by-turn Directions")
+        with st.container(height=360):
+            render_directions(data["segments"])
+
 else:
+    # -------------------------------------------------------------------------
+    # Initial / Empty State Before Route Calculation
+    # -------------------------------------------------------------------------
+    st.markdown("### 🗺️ Route Map")
     start_c = LANDMARKS[start_choice]
     end_c = LANDMARKS[end_choice]
-    segments = None
-
-center = ((start_c[0] + end_c[0]) / 2, (start_c[1] + end_c[1]) / 2)
-m = folium.Map(
-    location=center,
-    zoom_start=13,
-    tiles="https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-    attr="&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors",
-)
-
-# Add Road Network
-# Add Road Network - REMOVED for performance
-# The base tiles (OpenStreetMap) already show the road network clearly.
-# Adding the full GeoJSON overlay was causing rendering delays and visibility issues.
-pass
-
-# Add Route if available
-if segments:
-    full_route_coords = []
-    for seg in segments:
-        color = get_traffic_color(seg["multiplier"])
-        geometry = seg["geometry"]
-        
-        # Stitching
-        if full_route_coords:
-            if _point_distance(full_route_coords[-1], geometry[0]) < 0.0003:
-                full_route_coords.extend(geometry[1:])
-            else:
-                full_route_coords.extend(geometry)
-        else:
-            full_route_coords.extend(geometry)
-
-        # Segment line
-        folium.PolyLine(
-            geometry,
-            color=color,
-            weight=6,
-            opacity=0.8,
-            popup=f"{seg['name']} • {seg['distance_km']:.2f} km",
-            tooltip=f"{seg['name']} ({seg['time_min']:.1f} min)"
-        ).add_to(m)
-
-    # Continuous line overlay
-    if full_route_coords:
-        folium.PolyLine(
-            full_route_coords, 
-            color="#1a73e8", 
-            weight=3, 
-            opacity=0.4,
-            dash_array='5, 10'
-        ).add_to(m)
-
-# Add Markers
-folium.Marker(location=start_c, popup="Start", icon=folium.Icon(color="green", icon="play", prefix="fa")).add_to(m)
-folium.Marker(location=end_c, popup="Destination", icon=folium.Icon(color="red", icon="flag", prefix="fa")).add_to(m)
-
-# Render Map
-st_folium(m, height=500, width=None, key="main_map", returned_objects=[])
-st.caption("Schematic route on a simplified network.")
-
-# Metrics and Directions (only if route exists)
-if st.session_state.route_data:
-    data = st.session_state.route_data
-    
-    # Metrics Row
-    m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.metric("ETA", f"{data['total_time']:.1f} min")
-    with m2:
-        st.metric("Distance", f"{data['total_distance']:.1f} km")
-    with m3:
-        st.metric("Traffic Level", "High" if data['total_time'] / (data['total_distance'] or 1) > 2 else "Normal")
-    with m4:
-        st.metric("Predictor Engine", data.get("predictor", "Trained model"))
-
-    # Directions Section
-    st.markdown("### ↪️ Turn-by-turn Directions")
-    with st.container(height=400):
-        for i, seg in enumerate(data['segments'], 1):
-            color = get_traffic_color(seg["multiplier"])
-            icon = "🔴" if color == "red" else ("🟠" if color == "orange" else "🔵")
-            
-            # Format Distance
-            dist_km = seg['distance_km']
-            if dist_km < 1.0:
-                dist_str = f"{int(dist_km * 1000)} m"
-            else:
-                dist_str = f"{dist_km:.2f} km"
-                
-            # Format Time
-            time_min = seg['time_min']
-            mins = int(time_min)
-            secs = int((time_min - mins) * 60)
-            if mins > 0:
-                time_str = f"{mins} min {secs} sec"
-            else:
-                time_str = f"{secs} sec"
-                
-            # Turn Instruction
-            turn = seg.get("turn", "Go")
-            road_name = seg['name']
-            instruction = f"**{turn}** onto **{road_name}**" if turn != "Start" else f"Start at **{road_name}**"
-            
-            c1, c2 = st.columns([0.05, 0.95])
-            with c1:
-                st.write(f"**{i}.**")
-            with c2:
-                st.markdown(
-                    f"{instruction}  \n"
-                    f"_{dist_str}_ · _{time_str}_ · {icon}"
-                )
-            st.divider()
-else:
-    st.info("Choose landmarks, time, and mode, then click Calculate.")
+    m = build_route_map(None, start_c, end_c)
+    st_folium(m, height=450, use_container_width=True, key="empty_map", returned_objects=[])
+    st.caption("Choose landmarks, time, and mode in the sidebar, then click **Calculate fastest route**.")
 
 # -----------------------------------------------------------------------------
 # Model Validation & Methodology Panel (Loaded Dynamically from results/metrics.json)
@@ -816,16 +1114,14 @@ with st.expander("📊 Model Validation, Baseline Benchmarks & Methodology (from
         st.info(f"ℹ️ **Methodology Notice**: Model trained on {dataset_name}; applied to a hand-built Hyderabad road graph; not validated on Hyderabad traffic.")
 
         st.markdown(
-            "#### 📐 Traffic Volume to Multiplier Formula  \n"
-            "The trained regression model outputs hourly traffic volume $V$ (vehicles/hour). "
-            "Because edge travel times in Dijkstra/A* routing depend on speed degradation, volume is normalized and converted "
-            "into an edge penalty multiplier using the 90th percentile of the training volume ($V_{90} = 5,830\\text{ veh/h}$):  \n"
-            "$$\\text{Base Multiplier} = \\text{clip}\\left(0.85 + 1.60 \\times \\frac{V}{V_{90}}, \\; 0.85, \\; 2.50\\right)$$  \n"
-            "$$\\text{Effective Multiplier} = \\text{Base Multiplier} \\times \\text{RoadFactor} \\times \\text{ModeFactor}$$  \n"
-            "- **Free-flow / Late Night** ($V \\to 0$): Multiplier $\\approx 0.85$ (baseline travel speed).  \n"
-            "- **Peak Rush-Hour Congestion** ($V \\to V_{90}$): Multiplier $\\approx 2.45$ (heavy travel delay).  \n"
-            "- **Road Adjustment**: Motorway/Trunk = $\\times 1.05$; Residential/Living Street = $\\times 0.90$.  \n"
-            "- **Mode Adjustment**: Car = $\\times 1.0$; Bike = $\\times 0.65$; Walk = $\\times 0.30$."
+            "#### 🚦 Traffic Volume to Travel Time Penalty  \n"
+            "The trained machine learning model estimates hourly traffic congestion volume based on calendar schedules. "
+            "Congestion predictions are normalized and mapped to edge travel-time penalties according to traffic intensity, "
+            "road classification (e.g., motorways vs. residential streets), and transport mode (Car, Bike, Walk).  \n"
+            "- **Free-flow / Late Night**: Minimal traffic volume with baseline travel speeds.  \n"
+            "- **Peak Rush-Hour Congestion**: High traffic volume with substantial travel delay penalties.  \n"
+            "- **Road Adjustment**: Motorway and trunk roads account for higher capacity, while residential streets experience different delay characteristics.  \n"
+            "- **Mode Adjustment**: Pedestrians and bicycles are less affected by motor vehicle congestion."
         )
 
         st.markdown("#### 🔬 Unseen Test Set Evaluation (with 1,000-Resample 95% Bootstrap CIs)")
@@ -848,9 +1144,9 @@ with st.expander("📊 Model Validation, Baseline Benchmarks & Methodology (from
             p_gbr = paired["Gradient_Boosting_vs_Historical_Mean"]
             st.markdown(
                 f"**Baseline Comparison Finding**: Tuned Gradient Boosting achieved an MAE of `260.78` vs. `260.82` for the Historical Mean baseline. "
-                f"The paired bootstrap difference $(\\text{{MAE}}_{{\\text{{GBR}}}} - \\text{{MAE}}_{{\\text{{Baseline}}}})$ is **`{p_gbr['mae_diff_point']:.2f}` veh/h** "
+                f"The paired bootstrap difference (Gradient Boosting vs. Historical Mean baseline) is **`{p_gbr['mae_diff_point']:.2f}` veh/h** "
                 f"with a 95% CI of **`[{p_gbr['mae_diff_ci_lower']:.2f}, {p_gbr['mae_diff_ci_upper']:.2f}]`**. "
-                f"Because zero lies inside this confidence interval, **no calendar-feature model statistically beats the historical $(Hour, DOW)$ mean**."
+                f"Because zero lies inside this confidence interval, **no calendar-feature model statistically beats the historical (Hour, Day-of-Week) mean**."
             )
 
         st.markdown("#### 🔄 5-Fold Rolling-Origin Cross-Validation (Mean ± Std)")
