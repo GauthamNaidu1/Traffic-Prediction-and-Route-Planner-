@@ -1,0 +1,93 @@
+{
+  "metadata": {
+    "evaluation_title": "Evaluation of Holiday-Aware Historical Mean Baseline on Test Split",
+    "timestamp": "2026-10-30 23:09:51",
+    "total_runtime_seconds": 0.86,
+    "train_val_count": 34488,
+    "train_val_date_range": [
+      "2012-10-02 09:00:00",
+      "2018-01-19 14:00:00"
+    ],
+    "test_count": 6087,
+    "test_date_range": [
+      "2018-01-19 15:00:00",
+      "2018-09-30 23:00:00"
+    ],
+    "baseline_definition": "Historical mean traffic_volume grouped by (hour, day_of_week, is_us_holiday_all_day) on train+val",
+    "holiday_flags_definition": "All-day US Federal Holiday flag (1 for all 24 hours of federal holidays, 0 otherwise)",
+    "verdict": "The final Config 3 Gradient Boosting model STILL BEATS the holiday-aware historical mean baseline. Model Test MAE is 228.90 veh/h vs Holiday Baseline MAE of 231.95 veh/h (paired difference: -3.05 veh/h, 95% CI [-5.83, -0.25] veh/h, strictly excluding zero)."
+  },
+  "evaluation_metrics": {
+    "model_config3_metrics": {
+      "mae": {
+        "point": 228.9,
+        "ci_lower": 221.57,
+        "ci_upper": 237.44
+      },
+      "rmse": {
+        "point": 389.18,
+        "ci_lower": 366.62,
+        "ci_upper": 412.17
+      },
+      "r2": {
+        "point": 0.9614,
+        "ci_lower": 0.9564,
+        "ci_upper": 0.9659
+      }
+    },
+    "holiday_baseline_metrics": {
+      "mae": {
+        "point": 231.95,
+        "ci_lower": 224.4,
+        "ci_upper": 240.2
+      },
+      "rmse": {
+        "point": 386.77,
+        "ci_lower": 364.98,
+        "ci_upper": 408.92
+      },
+      "r2": {
+        "point": 0.9618,
+        "ci_lower": 0.957,
+        "ci_upper": 0.9662
+      }
+    },
+    "standard_historical_mean_metrics": {
+      "mae": {
+        "point": 257.27,
+        "ci_lower": 248.52,
+        "ci_upper": 267.05
+      },
+      "rmse": {
+        "point": 445.36,
+        "ci_lower": 416.66,
+        "ci_upper": 473.48
+      },
+      "r2": {
+        "point": 0.9494,
+        "ci_lower": 0.9426,
+        "ci_upper": 0.9557
+      }
+    },
+    "paired_difference_model_vs_holiday_baseline": {
+      "delta_mae_point": -3.05,
+      "delta_mae_ci_lower": -5.83,
+      "delta_mae_ci_upper": -0.25,
+      "delta_rmse_point": 2.41,
+      "delta_rmse_ci_lower": -1.18,
+      "delta_rmse_ci_upper": 6.02,
+      "model_beats_holiday_baseline": true,
+      "excludes_zero": true
+    },
+    "paired_difference_holiday_baseline_vs_standard_hist_mean": {
+      "delta_mae_point": -25.32,
+      "delta_mae_ci_lower": -29.84,
+      "delta_mae_ci_upper": -21.49,
+      "delta_rmse_point": -58.59,
+      "delta_rmse_ci_lower": -80.4,
+      "delta_rmse_ci_upper": -40.09,
+      "holiday_baseline_beats_standard_hist_mean": true,
+      "excludes_zero": true
+    }
+  }
+}
