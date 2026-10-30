@@ -1,0 +1,62 @@
+{
+  "task": "hourly_traffic_volume_forecasting",
+  "dataset": "UCI Metro Interstate Traffic Volume",
+  "target": "traffic_volume",
+  "date_range": {
+    "start": "2012-10-02 09:00:00",
+    "end": "2018-09-30 23:00:00",
+    "total_records": 40575
+  },
+  "splits": {
+    "train": {
+      "count": 28402,
+      "start": "2012-10-02 09:00:00",
+      "end": "2017-05-10 04:00:00"
+    },
+    "val": {
+      "count": 6086,
+      "start": "2017-05-10 05:00:00",
+      "end": "2018-01-19 14:00:00"
+    },
+    "test": {
+      "count": 6087,
+      "start": "2018-01-19 15:00:00",
+      "end": "2018-09-30 23:00:00"
+    }
+  },
+  "feature_sets": {
+    "calendar_primary": [
+      "hour_sin",
+      "hour_cos",
+      "day_of_week",
+      "is_weekend",
+      "is_holiday"
+    ],
+    "weather_nowcast_optional": [
+      "temp",
+      "rain_1h",
+      "snow_1h",
+      "clouds_all",
+      "weather_main"
+    ]
+  },
+  "baselines_test_set": {
+    "global_mean": {
+      "value": 3264.6,
+      "mae": 1735.33,
+      "rmse": 1981.11,
+      "r2": -0.0015
+    },
+    "historical_mean_by_hour_dow": {
+      "mae": 260.82,
+      "rmse": 448.08,
+      "r2": 0.9488
+    },
+    "seasonal_naive_7d": {
+      "mae": 321.63,
+      "rmse": 624.36,
+      "r2": 0.9005,
+      "exact_prev_week_matches": "6068/6087 (99.69%)"
+    }
+  }
+}

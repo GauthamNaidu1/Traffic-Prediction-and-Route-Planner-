@@ -1,6 +1,9 @@
 # Large data files
 *.graphml
 *.geojson
+*.zip
+*.tar.gz
+*.csv.gz
 cache/
 
 # Python
