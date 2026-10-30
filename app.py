@@ -18,7 +18,7 @@ from streamlit_folium import st_folium
 # Configuration & Constants
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="AI-Powered Traffic & Route Planner",
+    page_title="Traffic-Aware Route Planner",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -57,6 +57,22 @@ BASE_SPEEDS_MPS = {
     "Bike": 25 / 3.6,  # ~6.9 m/s
     "Walk": 5 / 3.6,   # ~1.4 m/s
 }
+
+# -----------------------------------------------------------------------------
+# Traffic Level Thresholds (Derived from travel-time multiplier)
+# -----------------------------------------------------------------------------
+TRAFFIC_LEVEL_LIGHT_MAX: float = 1.30      # Multiplier <= 1.30 -> Light traffic
+TRAFFIC_LEVEL_MODERATE_MAX: float = 1.80   # 1.30 < Multiplier <= 1.80 -> Moderate traffic
+                                           # Multiplier > 1.80 -> Heavy traffic
+
+def get_traffic_level_label(multiplier: float) -> str:
+    """Classifies a traffic multiplier into a readable label (Light / Moderate / Heavy)."""
+    if multiplier <= TRAFFIC_LEVEL_LIGHT_MAX:
+        return "Light"
+    elif multiplier <= TRAFFIC_LEVEL_MODERATE_MAX:
+        return "Moderate"
+    else:
+        return "Heavy"
 
 # -----------------------------------------------------------------------------
 # Data Loading
@@ -476,7 +492,13 @@ def create_route_map(
 ) -> folium.Map:
     """Creates a Folium map with the calculated route."""
     center = ((start_coord[0] + end_coord[0]) / 2, (start_coord[1] + end_coord[1]) / 2)
-    fmap = folium.Map(location=center, zoom_start=13, control_scale=True, tiles="cartodbpositron")
+    fmap = folium.Map(
+        location=center,
+        zoom_start=13,
+        control_scale=True,
+        tiles="https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        attr="&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors",
+    )
 
     # Background road network
     folium.GeoJson(
@@ -542,8 +564,8 @@ def create_route_map(
 # -----------------------------------------------------------------------------
 # Main UI
 # -----------------------------------------------------------------------------
-st.title("🗺️ AI-Powered Traffic & Route Planner")
-st.caption("Hyderabad road network from OpenStreetMap with A* traffic-aware routing.")
+st.title("🗺️ Traffic-Aware Route Planner")
+st.caption("A* travel-time routing across Hyderabad landmarks with congestion predictions from highway traffic data.")
 
 with st.sidebar:
     st.header("Trip Planner")
@@ -570,6 +592,7 @@ with st.sidebar:
         index=0,
         help="Compare the trained Gradient Boosting model against the deterministic rule-based baseline function."
     )
+    st.caption("Demo: congestion model trained on public highway data; travel times are simulated estimates.")
     
     if predictor_choice == "Trained model" and TRAFFIC_MODEL is None:
         st.warning("⚠️ Model file 'models/traffic_model.joblib' not found. Falling back to Rule-based baseline.")
@@ -579,11 +602,13 @@ with st.sidebar:
 
     day_num = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].index(day_idx)
     if effective_predictor == "Trained model" and TRAFFIC_MODEL is not None:
-        pred_vol, base_mult = predict_volume_and_base_multiplier(TRAFFIC_MODEL, hour, day_num)
-        st.caption(f"📈 **Predicted Volume**: `{pred_vol:,.0f} veh/h`  \n⚖️ **Base Multiplier**: `{base_mult:.2f}x` (from $V_{{90}}$ formula)")
+        _, base_mult = predict_volume_and_base_multiplier(TRAFFIC_MODEL, hour, day_num)
+        level_label = get_traffic_level_label(base_mult)
+        st.markdown(f"**Traffic level**: `{level_label}`")
     else:
         dummy_mult = get_traffic_multiplier(hour, day_num, "road", "Car")
-        st.caption(f"⚙️ **Baseline Step Multiplier**: `{dummy_mult:.2f}x` (from heuristic step rules)")
+        level_label = get_traffic_level_label(dummy_mult)
+        st.markdown(f"**Traffic level**: `{level_label}`")
     st.markdown("---")
 
     go = st.button("Calculate fastest route", type="primary", use_container_width=True)
@@ -669,7 +694,12 @@ else:
     segments = None
 
 center = ((start_c[0] + end_c[0]) / 2, (start_c[1] + end_c[1]) / 2)
-m = folium.Map(location=center, zoom_start=13, tiles="cartodbpositron")
+m = folium.Map(
+    location=center,
+    zoom_start=13,
+    tiles="https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attr="&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors",
+)
 
 # Add Road Network
 # Add Road Network - REMOVED for performance
@@ -719,6 +749,7 @@ folium.Marker(location=end_c, popup="Destination", icon=folium.Icon(color="red",
 
 # Render Map
 st_folium(m, height=500, width=None, key="main_map", returned_objects=[])
+st.caption("Schematic route on a simplified network.")
 
 # Metrics and Directions (only if route exists)
 if st.session_state.route_data:
