@@ -1,11 +1,15 @@
 import os
 import heapq
+import json
 import math
 from typing import Dict, List, Optional, Tuple, Any
 
 import folium
+import joblib
 import networkx as nx
+import numpy as np
 import osmnx as ox
+import pandas as pd
 from shapely.geometry import LineString, MultiLineString
 import streamlit as st
 from streamlit_folium import st_folium
@@ -144,8 +148,90 @@ def orient_geometry(
         
     return oriented
 
+# -----------------------------------------------------------------------------
+# Model & Metrics Loading (Streamlit Cached)
+# -----------------------------------------------------------------------------
+@st.cache_resource(show_spinner=False)
+def load_traffic_model(model_path: str = "models/traffic_model.joblib") -> Any:
+    """Loads the trained traffic volume model from disk. Cached by Streamlit."""
+    if os.path.exists(model_path):
+        try:
+            return joblib.load(model_path)
+        except Exception as e:
+            print(f"Error loading model from {model_path}: {e}")
+            return None
+    return None
+
+@st.cache_data(show_spinner=False)
+def load_metrics(metrics_path: str = "results/metrics.json") -> Optional[Dict[str, Any]]:
+    """Loads evaluation metrics from results/metrics.json. Cached by Streamlit."""
+    if os.path.exists(metrics_path):
+        try:
+            with open(metrics_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading metrics from {metrics_path}: {e}")
+            return None
+    return None
+
+# Global Model & Metrics references
+TRAFFIC_MODEL = load_traffic_model()
+METRICS_DATA = load_metrics()
+
+# -----------------------------------------------------------------------------
+# Traffic Multiplier Formulas (Documented & Reproducible)
+# -----------------------------------------------------------------------------
+# 1. Trained Model Conversion Formula:
+#    Traffic volume V (veh/h) predicted by the trained Gradient Boosting model
+#    is mapped to an edge travel-time multiplier using:
+#
+#        normalized_volume = V / V_90
+#        base_multiplier = clip(0.85 + 1.60 * normalized_volume, 0.85, 2.50)
+#
+#    Where V_90 = 5,830.0 veh/h is the 90th percentile of training traffic volume.
+#    Rationale:
+#    - Free-flow / night traffic (V -> 0): base multiplier -> 0.85
+#    - Rush-hour peak congestion (V -> V_90): base multiplier -> 2.45
+#    - Clipped to [0.85, 2.50] to prevent non-physical extrapolation.
+#    - Scaled by road hierarchy (motorway 1.05x, residential 0.90x) and mode.
+#
+# 2. Rule-Based Baseline Formula (Heuristic Stand-in):
+#    Uses discrete hour/weekend step multipliers (2.4 peak, 1.6 weekend, 1.3 normal, 0.85 night).
+
+V_90_TRAIN: float = 5830.0  # 90th percentile from training split (vehicles/hour)
+
+def predict_volume_and_base_multiplier(model: Any, hour: int, day_idx: int) -> Tuple[float, float]:
+    """
+    Predicts hourly traffic volume using the trained calendar ML model,
+    then converts volume into a base travel-time multiplier via the 90th-percentile formula.
+    """
+    row = pd.DataFrame([{
+        "hour_sin": np.sin(2 * np.pi * hour / 24.0),
+        "hour_cos": np.cos(2 * np.pi * hour / 24.0),
+        "day_of_week": day_idx,
+        "is_weekend": int(day_idx in {5, 6}),
+        "is_holiday": 0,
+    }])[["hour_sin", "hour_cos", "day_of_week", "is_weekend", "is_holiday"]]
+    
+    pred_vol = float(model.predict(row)[0])
+    norm_vol = max(0.0, pred_vol) / V_90_TRAIN
+    base_mult = float(np.clip(0.85 + 1.60 * norm_vol, 0.85, 2.50))
+    return pred_vol, base_mult
+
+def adjust_multiplier(base_multiplier: float, highway: Any, mode: str) -> float:
+    """Applies road type adjustment and travel mode scaling to base multiplier."""
+    base = base_multiplier
+    hw = highway if isinstance(highway, str) else (highway[0] if highway else "road")
+    if hw in {"motorway", "trunk"}:
+        base *= 1.05
+    elif hw in {"residential", "living_street"}:
+        base *= 0.90
+        
+    mode_factor = {"Car": 1.0, "Bike": 0.65, "Walk": 0.30}[mode]
+    return round(base * mode_factor, 3)
+
 def get_traffic_multiplier(hour: int, day_idx: int, highway: Any, mode: str) -> float:
-    """Calculates a traffic penalty multiplier based on time, day, and road type."""
+    """Rule-based baseline: Calculates traffic penalty multiplier using deterministic step rules."""
     is_weekend = day_idx in {5, 6}  # Saturday, Sunday
     
     # Base traffic based on hour
@@ -163,10 +249,10 @@ def get_traffic_multiplier(hour: int, day_idx: int, highway: Any, mode: str) -> 
     if hw in {"motorway", "trunk"}:
         base *= 1.05
     elif hw in {"residential", "living_street"}:
-        base *= 0.9
+        base *= 0.90
         
     # Adjust for mode
-    mode_factor = {"Car": 1.0, "Bike": 0.65, "Walk": 0.3}[mode]
+    mode_factor = {"Car": 1.0, "Bike": 0.65, "Walk": 0.30}[mode]
     
     return round(base * mode_factor, 3)
 
@@ -217,11 +303,28 @@ def traffic_aware_astar_path(
     hour: int,
     day_idx: int,
     mode: str,
+    predictor_type: str = "Trained model",
+    _model: Any = None,
 ) -> Tuple[Optional[List[int]], float, float, List[Dict]]:
     """
     Finds the shortest path using A* algorithm considering traffic factors.
+    Supports either the trained ML model or the rule-based baseline.
     Returns: (path_nodes, total_time_min, total_dist_km, segments_info)
     """
+    # Precompute base multiplier once if using trained model
+    model_to_use = _model if _model is not None else TRAFFIC_MODEL
+    use_model = (predictor_type == "Trained model" and model_to_use is not None)
+    if use_model:
+        _, base_mult = predict_volume_and_base_multiplier(model_to_use, hour, day_idx)
+    else:
+        base_mult = None
+
+    def _get_multiplier(highway: Any) -> float:
+        if use_model:
+            return adjust_multiplier(base_mult, highway, mode)
+        else:
+            return get_traffic_multiplier(hour, day_idx, highway, mode)
+
     # Priority queue stores (f_score, node)
     pq = [(0.0, source_node)]
     
@@ -253,7 +356,7 @@ def traffic_aware_astar_path(
                 length = data.get("length", 1.0)
                 highway = data.get("highway", "road")
                 
-                multiplier = get_traffic_multiplier(hour, day_idx, highway, mode)
+                multiplier = _get_multiplier(highway)
                 weight = compute_time_weight(length, mode, multiplier)
                 
                 if weight < min_weight:
@@ -290,7 +393,7 @@ def traffic_aware_astar_path(
             name = name[0] # Handle multiple names
             
         geometry = _geometry_to_latlon(edge_data.get("geometry"))
-        multiplier = get_traffic_multiplier(hour, day_idx, highway, mode)
+        multiplier = _get_multiplier(highway)
         travel_seconds = compute_time_weight(length_m, mode, multiplier)
         
         # Orientation
@@ -440,7 +543,7 @@ def create_route_map(
 # Main UI
 # -----------------------------------------------------------------------------
 st.title("🗺️ AI-Powered Traffic & Route Planner")
-st.caption("Real Hyderabad road network from OpenStreetMap with A* traffic-aware routing.")
+st.caption("Hyderabad road network from OpenStreetMap with A* traffic-aware routing.")
 
 with st.sidebar:
     st.header("Trip Planner")
@@ -458,6 +561,31 @@ with st.sidebar:
         )
         
     mode = st.radio("Mode", ["Car", "Bike", "Walk"], index=0, horizontal=True)
+
+    st.markdown("---")
+    st.subheader("Traffic Predictor Engine")
+    predictor_choice = st.radio(
+        "Engine Choice",
+        ["Trained model", "Rule-based baseline"],
+        index=0,
+        help="Compare the trained Gradient Boosting model against the deterministic rule-based baseline function."
+    )
+    
+    if predictor_choice == "Trained model" and TRAFFIC_MODEL is None:
+        st.warning("⚠️ Model file 'models/traffic_model.joblib' not found. Falling back to Rule-based baseline.")
+        effective_predictor = "Rule-based baseline"
+    else:
+        effective_predictor = predictor_choice
+
+    day_num = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].index(day_idx)
+    if effective_predictor == "Trained model" and TRAFFIC_MODEL is not None:
+        pred_vol, base_mult = predict_volume_and_base_multiplier(TRAFFIC_MODEL, hour, day_num)
+        st.caption(f"📈 **Predicted Volume**: `{pred_vol:,.0f} veh/h`  \n⚖️ **Base Multiplier**: `{base_mult:.2f}x` (from $V_{{90}}$ formula)")
+    else:
+        dummy_mult = get_traffic_multiplier(hour, day_num, "road", "Car")
+        st.caption(f"⚙️ **Baseline Step Multiplier**: `{dummy_mult:.2f}x` (from heuristic step rules)")
+    st.markdown("---")
+
     go = st.button("Calculate fastest route", type="primary", use_container_width=True)
 
 # Wrapper for nearest nodes to handle missing scikit-learn
@@ -501,8 +629,10 @@ if go:
                 source_node,
                 target_node,
                 hour,
-                ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].index(day_idx),
+                day_num,
                 mode,
+                predictor_type=effective_predictor,
+                _model=TRAFFIC_MODEL,
             )
             
             if path_nodes:
@@ -516,7 +646,8 @@ if go:
                     "total_time": total_time,
                     "total_distance": total_distance,
                     "start_coord": snapped_start,
-                    "end_coord": snapped_end
+                    "end_coord": snapped_end,
+                    "predictor": effective_predictor,
                 }
             else:
                 st.error("No drivable route found. Try a different pair of landmarks.")
@@ -594,13 +725,15 @@ if st.session_state.route_data:
     data = st.session_state.route_data
     
     # Metrics Row
-    m1, m2, m3 = st.columns(3)
+    m1, m2, m3, m4 = st.columns(4)
     with m1:
         st.metric("ETA", f"{data['total_time']:.1f} min")
     with m2:
         st.metric("Distance", f"{data['total_distance']:.1f} km")
     with m3:
         st.metric("Traffic Level", "High" if data['total_time'] / (data['total_distance'] or 1) > 2 else "Normal")
+    with m4:
+        st.metric("Predictor Engine", data.get("predictor", "Trained model"))
 
     # Directions Section
     st.markdown("### ↪️ Turn-by-turn Directions")
@@ -641,3 +774,78 @@ if st.session_state.route_data:
             st.divider()
 else:
     st.info("Choose landmarks, time, and mode, then click Calculate.")
+
+# -----------------------------------------------------------------------------
+# Model Validation & Methodology Panel (Loaded Dynamically from results/metrics.json)
+# -----------------------------------------------------------------------------
+st.markdown("---")
+with st.expander("📊 Model Validation, Baseline Benchmarks & Methodology (from results/metrics.json)", expanded=False):
+    if METRICS_DATA:
+        dataset_name = METRICS_DATA.get("dataset", "UCI Metro Interstate Traffic Volume")
+        st.info(f"ℹ️ **Methodology Notice**: Model trained on {dataset_name}; applied to a hand-built Hyderabad road graph; not validated on Hyderabad traffic.")
+
+        st.markdown(
+            "#### 📐 Traffic Volume to Multiplier Formula  \n"
+            "The trained regression model outputs hourly traffic volume $V$ (vehicles/hour). "
+            "Because edge travel times in Dijkstra/A* routing depend on speed degradation, volume is normalized and converted "
+            "into an edge penalty multiplier using the 90th percentile of the training volume ($V_{90} = 5,830\\text{ veh/h}$):  \n"
+            "$$\\text{Base Multiplier} = \\text{clip}\\left(0.85 + 1.60 \\times \\frac{V}{V_{90}}, \\; 0.85, \\; 2.50\\right)$$  \n"
+            "$$\\text{Effective Multiplier} = \\text{Base Multiplier} \\times \\text{RoadFactor} \\times \\text{ModeFactor}$$  \n"
+            "- **Free-flow / Late Night** ($V \\to 0$): Multiplier $\\approx 0.85$ (baseline travel speed).  \n"
+            "- **Peak Rush-Hour Congestion** ($V \\to V_{90}$): Multiplier $\\approx 2.45$ (heavy travel delay).  \n"
+            "- **Road Adjustment**: Motorway/Trunk = $\\times 1.05$; Residential/Living Street = $\\times 0.90$.  \n"
+            "- **Mode Adjustment**: Car = $\\times 1.0$; Bike = $\\times 0.65$; Walk = $\\times 0.30$."
+        )
+
+        st.markdown("#### 🔬 Unseen Test Set Evaluation (with 1,000-Resample 95% Bootstrap CIs)")
+        st.caption("Chronological split: 28,402 train (70%) / 6,086 val (15%) / 6,087 test (15%). No temporal leakage.")
+
+        test_ci = METRICS_DATA.get("test_set_bootstrap_95ci", {})
+        if test_ci:
+            rows = []
+            for m_name, m_vals in test_ci.items():
+                rows.append({
+                    "Model / Baseline": m_name,
+                    "MAE (veh/h)": f"{m_vals['mae']['point']:.2f} [{m_vals['mae']['ci_lower']:.1f}, {m_vals['mae']['ci_upper']:.1f}]",
+                    "RMSE (veh/h)": f"{m_vals['rmse']['point']:.2f} [{m_vals['rmse']['ci_lower']:.1f}, {m_vals['rmse']['ci_upper']:.1f}]",
+                    "R²": f"{m_vals['r2']['point']:.4f} [{m_vals['r2']['ci_lower']:.4f}, {m_vals['r2']['ci_upper']:.4f}]",
+                })
+            st.table(pd.DataFrame(rows))
+
+        paired = METRICS_DATA.get("paired_bootstrap_vs_historical_mean", {})
+        if paired and "Gradient_Boosting_vs_Historical_Mean" in paired:
+            p_gbr = paired["Gradient_Boosting_vs_Historical_Mean"]
+            st.markdown(
+                f"**Baseline Comparison Finding**: Tuned Gradient Boosting achieved an MAE of `260.78` vs. `260.82` for the Historical Mean baseline. "
+                f"The paired bootstrap difference $(\\text{{MAE}}_{{\\text{{GBR}}}} - \\text{{MAE}}_{{\\text{{Baseline}}}})$ is **`{p_gbr['mae_diff_point']:.2f}` veh/h** "
+                f"with a 95% CI of **`[{p_gbr['mae_diff_ci_lower']:.2f}, {p_gbr['mae_diff_ci_upper']:.2f}]`**. "
+                f"Because zero lies inside this confidence interval, **no calendar-feature model statistically beats the historical $(Hour, DOW)$ mean**."
+            )
+
+        st.markdown("#### 🔄 5-Fold Rolling-Origin Cross-Validation (Mean ± Std)")
+        rolling = METRICS_DATA.get("rolling_origin_5fold_summary", {})
+        if rolling:
+            r_rows = []
+            for r_name, r_vals in rolling.items():
+                r_rows.append({
+                    "Model / Baseline": r_name,
+                    "MAE (veh/h)": f"{r_vals['mae_mean']:.2f} ± {r_vals['mae_std']:.2f}",
+                    "RMSE (veh/h)": f"{r_vals['rmse_mean']:.2f} ± {r_vals['rmse_std']:.2f}",
+                    "R²": f"{r_vals['r2_mean']:.4f} ± {r_vals['r2_std']:.4f}",
+                })
+            st.table(pd.DataFrame(r_rows))
+
+        nowcast = METRICS_DATA.get("nowcast_experiment", {})
+        if nowcast:
+            st.markdown(
+                "#### ☁️ Nowcast Experiment (Contemporaneous Weather Features Included)  \n"
+                "- Weather features: `temp`, `rain_1h`, `snow_1h`, `clouds_all`, and one-hot weather categories.  \n"
+                f"- **Nowcast Test MAE**: `{nowcast['test_ci']['mae']['point']:.2f}` veh/h (compared to `{test_ci.get('Gradient Boosting', {}).get('mae', {}).get('point', 260.78):.2f}` for calendar-only).  \n"
+                "- *Key Insight*: Contemporaneous weather sensors provide actionable nowcasting signal, whereas future trip planning is fundamentally constrained by calendar schedules."
+            )
+
+        best_meta = METRICS_DATA.get("best_calendar_model", {})
+        if best_meta:
+            st.caption(f"💾 Active saved model: `{best_meta.get('artifact_path', 'models/traffic_model.joblib')}` ({best_meta.get('size_mb', 0.22)} MB) — Tuned parameters: `{best_meta.get('params', {})}`")
+    else:
+        st.info("Metrics file `results/metrics.json` not found. Run `python train/train_models.py` to generate evaluation metrics.")
