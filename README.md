@@ -163,15 +163,15 @@ We evaluated $N=200$ randomly sampled origin-destination pairs on the hand-built
 
 | Temporal Condition | Day & Hour | Predicted Vol (veh/h) | Free-Flow Mean (min) | Rule-Based Mean (min) | Model Mean (min) | Model $-$ Rule Diff [95% CI] (min) |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Weekday Morning Rush** | Monday 08:00 | 5,252 | 17.49 | 41.99 | 40.09 | **-1.91** [-2.05, -1.77] |
-| **Weekday Midday** | Wednesday 13:00 | 4,879 | 17.49 | 22.75 | 38.30 | **+15.56** [+14.45, +16.70] |
-| **Weekday Evening Rush** | Friday 18:00 | 4,654 | 17.49 | 41.99 | 37.22 | **-4.78** [-5.13, -4.44] |
-| **Weekday Late Night** | Tuesday 02:00 | 283 | 17.49 | 14.87 | 16.24 | **+1.36** [+1.27, +1.47] |
-| **Weekend Afternoon Peak** | Saturday 14:00 | 4,535 | 17.49 | 28.00 | 36.65 | **+8.66** [+8.04, +9.29] |
-| **Weekend Late Night** | Sunday 03:00 | 386 | 17.49 | 14.87 | 16.73 | **+1.86** [+1.72, +1.99] |
-| **Overall (1,200 queries)** | — | — | **17.49** | **27.91** | **31.37** | **+3.46** [+3.05, +3.91] |
+| **Weekday Morning Rush** | Monday 08:00 | 5,397 | 17.49 | 41.99 | 40.79 | **-1.21** [-1.29, -1.12] |
+| **Weekday Midday** | Wednesday 13:00 | 4,938 | 17.49 | 22.75 | 38.58 | **+15.84** [+14.71, +17.00] |
+| **Weekday Evening Rush** | Friday 18:00 | 4,724 | 17.49 | 41.99 | 37.57 | **-4.43** [-4.75, -4.11] |
+| **Weekday Late Night** | Tuesday 02:00 | 278 | 17.49 | 14.87 | 16.20 | **+1.33** [+1.24, +1.43] |
+| **Weekend Afternoon Peak** | Saturday 14:00 | 4,680 | 17.49 | 28.00 | 37.34 | **+9.35** [+8.68, +10.03] |
+| **Weekend Late Night** | Sunday 03:00 | 425 | 17.49 | 14.87 | 16.92 | **+2.05** [+1.90, +2.20] |
+| **Overall (1,200 queries)** | — | — | **17.49** | **27.91** | **31.23** | **+3.82** [+3.41, +4.29] |
 
-- **Overall Model vs Rule-Based Difference**: Mean $+3.46$ min (95% CI: $[+3.05, +3.91]$ min); Median $+1.54$ min (95% CI: $[+1.33, +1.70]$ min).
+- **Overall Model vs Rule-Based Difference**: Mean $+3.82$ min (95% CI: $[+3.41, +4.29]$ min); Median $+1.59$ min (95% CI: $[+1.35, +1.77]$ min).
 - **Route Divergence Share**: **0.0%** across all 1,200 queries (shortest topological paths were identical under Free-Flow, Rule-Based, and Trained Model weights).
 - **Explanation**: The hand-built network consists of 23 nodes and only 4 planar cycles. Detours are $\approx 50\%$ longer in physical distance than direct paths. Because edge multipliers shift proportionally across road hierarchies, the delay on direct paths never exceeds the threshold required to make a geometric detour optimal.
 

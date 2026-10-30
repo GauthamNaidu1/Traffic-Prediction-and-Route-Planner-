@@ -147,13 +147,25 @@ def get_model_multiplier(model: Any, hour: int, day_idx: int, highway: str) -> T
     Computes trained ML model volume prediction and converts it to edge multiplier.
     Returns: (predicted_volume, adjusted_edge_multiplier)
     """
-    row = pd.DataFrame([{
-        "hour_sin": np.sin(2 * np.pi * hour / 24.0),
-        "hour_cos": np.cos(2 * np.pi * hour / 24.0),
-        "day_of_week": day_idx,
-        "is_weekend": int(day_idx in {5, 6}),
-        "is_holiday": 0,
-    }])[CALENDAR_FEATURES]
+    if hasattr(model, "n_features_in_") and model.n_features_in_ == 8:
+        row = pd.DataFrame([{
+            "hour_sin": np.sin(2 * np.pi * hour / 24.0),
+            "hour_cos": np.cos(2 * np.pi * hour / 24.0),
+            "day_of_week": day_idx,
+            "is_weekend": int(day_idx in {5, 6}),
+            "is_us_holiday": 0,
+            "days_to_nearest_holiday": 15.0,
+            "is_day_before_holiday": 0,
+            "is_day_after_holiday": 0,
+        }])
+    else:
+        row = pd.DataFrame([{
+            "hour_sin": np.sin(2 * np.pi * hour / 24.0),
+            "hour_cos": np.cos(2 * np.pi * hour / 24.0),
+            "day_of_week": day_idx,
+            "is_weekend": int(day_idx in {5, 6}),
+            "is_holiday": 0,
+        }])[CALENDAR_FEATURES]
 
     vol = float(model.predict(row)[0])
     base_mult = float(np.clip(0.85 + 1.60 * (max(0.0, vol) / V_90_CAPACITY), 0.85, 2.50))

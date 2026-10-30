@@ -8,30 +8,30 @@
   },
   "overall_differences_minutes": {
     "trained_model_minus_rule_based": {
-      "mean": 3.46,
+      "mean": 3.82,
       "mean_ci_95": [
-        3.05,
-        3.91
+        3.41,
+        4.29
       ],
       "mean_excludes_zero": true,
-      "median": 1.54,
+      "median": 1.59,
       "median_ci_95": [
-        1.33,
-        1.7
+        1.35,
+        1.77
       ],
       "median_excludes_zero": true
     },
     "trained_model_minus_free_flow": {
-      "mean": 13.38,
+      "mean": 13.74,
       "mean_ci_95": [
-        12.68,
-        14.11
+        13.03,
+        14.49
       ],
       "mean_excludes_zero": true,
-      "median": 12.41,
+      "median": 12.81,
       "median_ci_95": [
-        10.26,
-        13.99
+        10.41,
+        14.29
       ],
       "median_excludes_zero": true
     },
@@ -59,38 +59,38 @@
       "condition": "Weekday Morning Rush (Monday 08:00)",
       "hour": 8,
       "day": "Monday",
-      "predicted_volume_veh_h": 5251.5,
+      "predicted_volume_veh_h": 5397.1,
       "travel_times_mean_minutes": {
         "free_flow": 17.49,
         "rule_based": 41.99,
-        "trained_model": 40.09
+        "trained_model": 40.79
       },
       "differences": {
         "model_minus_rule": {
-          "mean": -1.91,
+          "mean": -1.21,
           "mean_ci_95": [
-            -2.05,
-            -1.77
+            -1.29,
+            -1.12
           ],
           "mean_excludes_zero": true,
-          "median": -1.87,
+          "median": -1.18,
           "median_ci_95": [
-            -2.16,
-            -1.68
+            -1.37,
+            -1.07
           ],
           "median_excludes_zero": true
         },
         "model_minus_free_flow": {
-          "mean": 22.6,
+          "mean": 23.3,
           "mean_ci_95": [
-            20.98,
-            24.29
+            21.63,
+            25.04
           ],
           "mean_excludes_zero": true,
-          "median": 21.75,
+          "median": 22.44,
           "median_ci_95": [
-            19.95,
-            25.33
+            20.56,
+            26.12
           ],
           "median_excludes_zero": true
         },
@@ -120,38 +120,38 @@
       "condition": "Weekday Midday (Wednesday 13:00)",
       "hour": 13,
       "day": "Wednesday",
-      "predicted_volume_veh_h": 4879.4,
+      "predicted_volume_veh_h": 4937.7,
       "travel_times_mean_minutes": {
         "free_flow": 17.49,
         "rule_based": 22.75,
-        "trained_model": 38.3
+        "trained_model": 38.58
       },
       "differences": {
         "model_minus_rule": {
-          "mean": 15.56,
+          "mean": 15.84,
           "mean_ci_95": [
-            14.45,
-            16.7
+            14.71,
+            17.0
           ],
           "mean_excludes_zero": true,
-          "median": 15.27,
+          "median": 15.55,
           "median_ci_95": [
-            13.74,
-            17.63
+            13.98,
+            17.95
           ],
           "median_excludes_zero": true
         },
         "model_minus_free_flow": {
-          "mean": 20.81,
+          "mean": 21.09,
           "mean_ci_95": [
-            19.32,
-            22.37
+            19.58,
+            22.67
           ],
           "mean_excludes_zero": true,
-          "median": 20.02,
+          "median": 20.29,
           "median_ci_95": [
-            18.37,
-            23.31
+            18.62,
+            23.63
           ],
           "median_excludes_zero": true
         },
@@ -181,38 +181,38 @@
       "condition": "Weekday Evening Rush (Friday 18:00)",
       "hour": 18,
       "day": "Friday",
-      "predicted_volume_veh_h": 4653.7,
+      "predicted_volume_veh_h": 4724.2,
       "travel_times_mean_minutes": {
         "free_flow": 17.49,
         "rule_based": 41.99,
-        "trained_model": 37.22
+        "trained_model": 37.57
       },
       "differences": {
         "model_minus_rule": {
-          "mean": -4.78,
+          "mean": -4.43,
           "mean_ci_95": [
-            -5.13,
-            -4.44
+            -4.75,
+            -4.11
           ],
           "mean_excludes_zero": true,
-          "median": -4.69,
+          "median": -4.35,
           "median_ci_95": [
-            -5.41,
-            -4.22
+            -5.02,
+            -3.91
           ],
           "median_excludes_zero": true
         },
         "model_minus_free_flow": {
-          "mean": 19.73,
+          "mean": 20.07,
           "mean_ci_95": [
-            18.31,
-            21.2
+            18.64,
+            21.58
           ],
           "mean_excludes_zero": true,
-          "median": 18.96,
+          "median": 19.3,
           "median_ci_95": [
-            17.41,
-            22.08
+            17.72,
+            22.47
           ],
           "median_excludes_zero": true
         },
@@ -242,38 +242,38 @@
       "condition": "Weekday Late Night (Tuesday 02:00)",
       "hour": 2,
       "day": "Tuesday",
-      "predicted_volume_veh_h": 282.8,
+      "predicted_volume_veh_h": 277.5,
       "travel_times_mean_minutes": {
         "free_flow": 17.49,
         "rule_based": 14.87,
-        "trained_model": 16.24
+        "trained_model": 16.2
       },
       "differences": {
         "model_minus_rule": {
-          "mean": 1.36,
+          "mean": 1.33,
           "mean_ci_95": [
-            1.27,
-            1.47
+            1.24,
+            1.43
           ],
           "mean_excludes_zero": true,
-          "median": 1.34,
+          "median": 1.31,
           "median_ci_95": [
-            1.21,
-            1.55
+            1.17,
+            1.51
           ],
           "median_excludes_zero": true
         },
         "model_minus_free_flow": {
-          "mean": -1.26,
+          "mean": -1.29,
           "mean_ci_95": [
-            -1.35,
-            -1.16
+            -1.38,
+            -1.2
           ],
           "mean_excludes_zero": true,
-          "median": -1.12,
+          "median": -1.16,
           "median_ci_95": [
-            -1.25,
-            -1.06
+            -1.29,
+            -1.08
           ],
           "median_excludes_zero": true
         },
@@ -303,38 +303,38 @@
       "condition": "Weekend Afternoon Peak (Saturday 14:00)",
       "hour": 14,
       "day": "Saturday",
-      "predicted_volume_veh_h": 4534.9,
+      "predicted_volume_veh_h": 4680.2,
       "travel_times_mean_minutes": {
         "free_flow": 17.49,
         "rule_based": 28.0,
-        "trained_model": 36.65
+        "trained_model": 37.34
       },
       "differences": {
         "model_minus_rule": {
-          "mean": 8.66,
+          "mean": 9.35,
           "mean_ci_95": [
-            8.04,
-            9.29
+            8.68,
+            10.03
           ],
           "mean_excludes_zero": true,
-          "median": 8.5,
+          "median": 9.17,
           "median_ci_95": [
-            7.65,
-            9.81
+            8.25,
+            10.59
           ],
           "median_excludes_zero": true
         },
         "model_minus_free_flow": {
-          "mean": 19.16,
+          "mean": 19.85,
           "mean_ci_95": [
-            17.79,
-            20.6
+            18.43,
+            21.34
           ],
           "mean_excludes_zero": true,
-          "median": 18.42,
+          "median": 19.08,
           "median_ci_95": [
-            16.92,
-            21.44
+            17.52,
+            22.22
           ],
           "median_excludes_zero": true
         },
@@ -364,38 +364,38 @@
       "condition": "Weekend Late Night (Sunday 03:00)",
       "hour": 3,
       "day": "Sunday",
-      "predicted_volume_veh_h": 385.5,
+      "predicted_volume_veh_h": 425.1,
       "travel_times_mean_minutes": {
         "free_flow": 17.49,
         "rule_based": 14.87,
-        "trained_model": 16.73
+        "trained_model": 16.92
       },
       "differences": {
         "model_minus_rule": {
-          "mean": 1.86,
+          "mean": 2.05,
           "mean_ci_95": [
-            1.72,
-            1.99
+            1.9,
+            2.2
           ],
           "mean_excludes_zero": true,
-          "median": 1.82,
+          "median": 2.01,
           "median_ci_95": [
-            1.64,
-            2.1
+            1.81,
+            2.32
           ],
           "median_excludes_zero": true
         },
         "model_minus_free_flow": {
-          "mean": -0.76,
+          "mean": -0.57,
           "mean_ci_95": [
-            -0.83,
-            -0.7
+            -0.64,
+            -0.51
           ],
           "mean_excludes_zero": true,
-          "median": -0.67,
+          "median": -0.48,
           "median_ci_95": [
-            -0.74,
-            -0.55
+            -0.55,
+            -0.38
           ],
           "median_excludes_zero": true
         },
