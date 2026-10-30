@@ -1,0 +1,72 @@
+{
+  "metadata": {
+    "evaluation_timestamp": "2026-10-30 15:11:57",
+    "model_architecture": "GradientBoostingRegressor",
+    "features": [
+      "hour_sin",
+      "hour_cos",
+      "day_of_week",
+      "is_weekend",
+      "is_us_holiday",
+      "days_to_nearest_holiday",
+      "is_day_before_holiday",
+      "is_day_after_holiday"
+    ],
+    "train_val_count": 34488,
+    "train_val_date_range": [
+      "2012-10-02 09:00:00",
+      "2018-01-19 14:00:00"
+    ],
+    "test_count": 6087,
+    "test_date_range": [
+      "2018-01-19 15:00:00",
+      "2018-09-30 23:00:00"
+    ],
+    "note_on_test_split": "The test split (2018-01-19 to 2018-09-30) was previously viewed during earlier baseline auditing. This evaluation was executed strictly once on the final frozen model without iteration or tuning."
+  },
+  "test_evaluation": {
+    "model_metrics": {
+      "mae": {
+        "point": 228.9,
+        "ci_lower": 221.57,
+        "ci_upper": 237.44
+      },
+      "rmse": {
+        "point": 389.18,
+        "ci_lower": 366.62,
+        "ci_upper": 412.17
+      },
+      "r2": {
+        "point": 0.9614,
+        "ci_lower": 0.9564,
+        "ci_upper": 0.9659
+      }
+    },
+    "historical_mean_metrics": {
+      "mae": {
+        "point": 257.27,
+        "ci_lower": 248.52,
+        "ci_upper": 267.05
+      },
+      "rmse": {
+        "point": 445.36,
+        "ci_lower": 416.66,
+        "ci_upper": 473.48
+      },
+      "r2": {
+        "point": 0.9494,
+        "ci_lower": 0.9426,
+        "ci_upper": 0.9557
+      }
+    },
+    "paired_difference_vs_historical_mean": {
+      "delta_mae_point": -28.37,
+      "delta_mae_ci_lower": -33.53,
+      "delta_mae_ci_upper": -23.35,
+      "delta_rmse_point": -56.18,
+      "delta_rmse_ci_lower": -79.3,
+      "delta_rmse_ci_upper": -36.82,
+      "significant_improvement": true
+    }
+  }
+}

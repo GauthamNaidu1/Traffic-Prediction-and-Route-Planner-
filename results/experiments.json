@@ -1,0 +1,347 @@
+{
+  "metadata": {
+    "evaluation_protocol": "5-Fold Rolling-Origin Expanding-Window Cross-Validation",
+    "dataset_split": "Train + Validation Only (2012-10-02 to 2018-01-19, N=34,488)",
+    "test_split_status": "Strictly Untouched / Not Evaluated",
+    "timestamp": "2026-10-30 15:06:51",
+    "total_runtime_seconds": 101.69,
+    "n_folds": 5,
+    "bootstrap_resamples": 1000
+  },
+  "us_federal_holidays_count": 71,
+  "us_federal_holidays": [
+    "2012-01-02",
+    "2012-01-16",
+    "2012-02-20",
+    "2012-05-28",
+    "2012-07-04",
+    "2012-09-03",
+    "2012-10-08",
+    "2012-11-12",
+    "2012-11-22",
+    "2012-12-25",
+    "2013-01-01",
+    "2013-01-21",
+    "2013-02-18",
+    "2013-05-27",
+    "2013-07-04",
+    "2013-09-02",
+    "2013-10-14",
+    "2013-11-11",
+    "2013-11-28",
+    "2013-12-25",
+    "2014-01-01",
+    "2014-01-20",
+    "2014-02-17",
+    "2014-05-26",
+    "2014-07-04",
+    "2014-09-01",
+    "2014-10-13",
+    "2014-11-11",
+    "2014-11-27",
+    "2014-12-25",
+    "2015-01-01",
+    "2015-01-19",
+    "2015-02-16",
+    "2015-05-25",
+    "2015-07-03",
+    "2015-09-07",
+    "2015-10-12",
+    "2015-11-11",
+    "2015-11-26",
+    "2015-12-25",
+    "2016-01-01",
+    "2016-01-18",
+    "2016-02-15",
+    "2016-05-30",
+    "2016-07-04",
+    "2016-09-05",
+    "2016-10-10",
+    "2016-11-11",
+    "2016-11-24",
+    "2016-12-26",
+    "2017-01-02",
+    "2017-01-16",
+    "2017-02-20",
+    "2017-05-29",
+    "2017-07-04",
+    "2017-09-04",
+    "2017-10-09",
+    "2017-11-10",
+    "2017-11-23",
+    "2017-12-25",
+    "2018-01-01",
+    "2018-01-15",
+    "2018-02-19",
+    "2018-05-28",
+    "2018-07-04",
+    "2018-09-03",
+    "2018-10-08",
+    "2018-11-12",
+    "2018-11-22",
+    "2018-12-25",
+    "2019-01-01"
+  ],
+  "results": {
+    "Historical Mean (Hour, DOW)": {
+      "fold_metrics": {
+        "mae": [
+          328.85,
+          289.68,
+          319.33,
+          288.23,
+          288.3
+        ],
+        "rmse": [
+          573.99,
+          471.5,
+          557.16,
+          456.54,
+          510.03
+        ],
+        "r2": [
+          0.9173,
+          0.9446,
+          0.9198,
+          0.9455,
+          0.9326
+        ]
+      },
+      "cv_mean_std": {
+        "mae_mean": 302.88,
+        "mae_std": 17.59,
+        "rmse_mean": 513.84,
+        "rmse_std": 46.01,
+        "r2_mean": 0.932,
+        "r2_std": 0.0119
+      },
+      "paired_bootstrap_vs_historical_mean": {
+        "delta_mae_point": 0.0,
+        "delta_mae_ci_lower": 0.0,
+        "delta_mae_ci_upper": 0.0,
+        "delta_rmse_point": 0.0,
+        "delta_rmse_ci_lower": 0.0,
+        "delta_rmse_ci_upper": 0.0,
+        "significant_improvement": false
+      }
+    },
+    "Config 1: Current Calendar Model (GBR)": {
+      "fold_metrics": {
+        "mae": [
+          328.73,
+          289.78,
+          319.19,
+          288.31,
+          288.26
+        ],
+        "rmse": [
+          573.77,
+          471.58,
+          557.06,
+          456.59,
+          509.85
+        ],
+        "r2": [
+          0.9174,
+          0.9446,
+          0.9199,
+          0.9455,
+          0.9327
+        ]
+      },
+      "cv_mean_std": {
+        "mae_mean": 302.85,
+        "mae_std": 17.5,
+        "rmse_mean": 513.77,
+        "rmse_std": 45.91,
+        "r2_mean": 0.932,
+        "r2_std": 0.0118
+      },
+      "paired_bootstrap_vs_historical_mean": {
+        "delta_mae_point": -0.02,
+        "delta_mae_ci_lower": -0.14,
+        "delta_mae_ci_upper": 0.08,
+        "delta_rmse_point": -0.08,
+        "delta_rmse_ci_lower": -0.17,
+        "delta_rmse_ci_upper": -0.0,
+        "significant_improvement": false
+      }
+    },
+    "Config 2: Calendar + Seasonality & Trend (GBR)": {
+      "fold_metrics": {
+        "mae": [
+          335.73,
+          407.19,
+          435.77,
+          311.99,
+          333.61
+        ],
+        "rmse": [
+          538.14,
+          587.35,
+          620.71,
+          455.63,
+          475.37
+        ],
+        "r2": [
+          0.9273,
+          0.914,
+          0.9005,
+          0.9457,
+          0.9415
+        ]
+      },
+      "cv_mean_std": {
+        "mae_mean": 364.86,
+        "mae_std": 47.83,
+        "rmse_mean": 535.44,
+        "rmse_std": 63.17,
+        "r2_mean": 0.9258,
+        "r2_std": 0.0169
+      },
+      "paired_bootstrap_vs_historical_mean": {
+        "delta_mae_point": 61.98,
+        "delta_mae_ci_lower": 58.16,
+        "delta_mae_ci_upper": 65.78,
+        "delta_rmse_point": 23.25,
+        "delta_rmse_ci_lower": 14.32,
+        "delta_rmse_ci_upper": 32.26,
+        "significant_improvement": false
+      }
+    },
+    "Config 3: Calendar + US Holiday Proximity (GBR)": {
+      "fold_metrics": {
+        "mae": [
+          284.52,
+          267.73,
+          303.32,
+          271.25,
+          256.91
+        ],
+        "rmse": [
+          461.85,
+          442.94,
+          502.61,
+          423.21,
+          416.86
+        ],
+        "r2": [
+          0.9465,
+          0.9511,
+          0.9348,
+          0.9532,
+          0.955
+        ]
+      },
+      "cv_mean_std": {
+        "mae_mean": 276.75,
+        "mae_std": 15.95,
+        "rmse_mean": 449.49,
+        "rmse_std": 30.9,
+        "r2_mean": 0.9481,
+        "r2_std": 0.0072
+      },
+      "paired_bootstrap_vs_historical_mean": {
+        "delta_mae_point": -26.13,
+        "delta_mae_ci_lower": -29.33,
+        "delta_mae_ci_upper": -22.63,
+        "delta_rmse_point": -65.34,
+        "delta_rmse_ci_lower": -77.7,
+        "delta_rmse_ci_upper": -52.83,
+        "significant_improvement": true
+      }
+    },
+    "Config 4: Target Transform (log1p) + HistGBR (Early Stopping)": {
+      "fold_metrics": {
+        "mae": [
+          307.42,
+          364.11,
+          407.84,
+          812.34,
+          501.95
+        ],
+        "rmse": [
+          475.45,
+          544.34,
+          610.16,
+          1252.45,
+          841.45
+        ],
+        "r2": [
+          0.9433,
+          0.9262,
+          0.9039,
+          0.59,
+          0.8166
+        ]
+      },
+      "cv_mean_std": {
+        "mae_mean": 478.73,
+        "mae_std": 178.52,
+        "rmse_mean": 744.77,
+        "rmse_std": 282.1,
+        "r2_mean": 0.836,
+        "r2_std": 0.1305
+      },
+      "paired_bootstrap_vs_historical_mean": {
+        "delta_mae_point": 175.85,
+        "delta_mae_ci_lower": 168.26,
+        "delta_mae_ci_upper": 183.45,
+        "delta_rmse_point": 280.51,
+        "delta_rmse_ci_lower": 261.39,
+        "delta_rmse_ci_upper": 300.67,
+        "significant_improvement": false
+      }
+    },
+    "Config 5: Average Ensemble (Config 3 + Config 1)": {
+      "fold_metrics": {
+        "mae": [
+          293.63,
+          266.4,
+          305.97,
+          273.17,
+          265.47
+        ],
+        "rmse": [
+          479.18,
+          421.4,
+          517.56,
+          418.23,
+          435.44
+        ],
+        "r2": [
+          0.9424,
+          0.9557,
+          0.9308,
+          0.9543,
+          0.9509
+        ]
+      },
+      "cv_mean_std": {
+        "mae_mean": 280.93,
+        "mae_std": 16.12,
+        "rmse_mean": 454.36,
+        "rmse_std": 38.37,
+        "r2_mean": 0.9468,
+        "r2_std": 0.0092
+      },
+      "paired_bootstrap_vs_historical_mean": {
+        "delta_mae_point": -21.95,
+        "delta_mae_ci_lower": -23.64,
+        "delta_mae_ci_upper": -19.97,
+        "delta_rmse_point": -59.92,
+        "delta_rmse_ci_lower": -67.82,
+        "delta_rmse_ci_upper": -52.22,
+        "significant_improvement": true
+      }
+    }
+  },
+  "recommendation": {
+    "decision": "UPGRADE_RECOMMENDED",
+    "recommended_configuration": "Config 3: Calendar + US Holiday Proximity (GBR)",
+    "cv_mae": 276.75,
+    "mae_reduction_vs_current": -26.1,
+    "ci_vs_historical_mean": "[-29.33, -22.63]",
+    "rationale": "Configuration 'Config 3: Calendar + US Holiday Proximity (GBR)' achieved a CV MAE of 276.75 veh/h (26.10 veh/h reduction vs current calendar model). Its paired bootstrap 95% CI vs Historical Mean [-29.33, -22.63] strictly excludes zero, confirming statistically significant performance improvement."
+  }
+}

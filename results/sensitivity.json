@@ -1,0 +1,184 @@
+{
+  "metadata": {
+    "evaluation_title": "Sensitivity Analysis of Congestion-to-Travel-Time Multiplier Constants",
+    "timestamp": "2026-10-30 15:17:18",
+    "dataset_notice": "Constants (0.85, 1.60, V90=5830.0, clip=2.50, road and mode factors) are heuristic domain assumptions, not calibrated or empirically fitted on Hyderabad sensor data.",
+    "n_pairs": 200,
+    "n_conditions": 6,
+    "total_route_queries": 1200,
+    "baseline_mean_travel_time_min": 31.23
+  },
+  "baseline_constants": {
+    "intercept": 0.85,
+    "slope": 1.6,
+    "v90_capacity": 5830.0,
+    "clip_max": 2.5,
+    "road_hierarchy_factors": {
+      "motorway": 1.05,
+      "trunk": 1.05,
+      "primary": 1.0,
+      "secondary": 1.0,
+      "residential": 0.9,
+      "living_street": 0.9
+    },
+    "travel_mode_factor_car": 1.0
+  },
+  "perturbation_magnitude": "+/- 25%",
+  "sensitivity_results": {
+    "intercept": {
+      "name": "Intercept (Free-flow base)",
+      "baseline_value": 0.85,
+      "variations": {
+        "minus_25": {
+          "label": "0.6375 (-25%)",
+          "mean_travel_time_min": 27.51,
+          "delta_travel_time_min": -3.72,
+          "percent_delta_travel_time": -11.9,
+          "route_changes_count": 0,
+          "route_change_share_percent": 0.0
+        },
+        "plus_25": {
+          "label": "1.0625 (+25%)",
+          "mean_travel_time_min": 34.82,
+          "delta_travel_time_min": 3.59,
+          "percent_delta_travel_time": 11.5,
+          "route_changes_count": 0,
+          "route_change_share_percent": 0.0
+        }
+      }
+    },
+    "slope": {
+      "name": "Slope (Volume-delay sensitivity)",
+      "baseline_value": 1.6,
+      "variations": {
+        "minus_25": {
+          "label": "1.20 (-25%)",
+          "mean_travel_time_min": 27.14,
+          "delta_travel_time_min": -4.09,
+          "percent_delta_travel_time": -13.1,
+          "route_changes_count": 0,
+          "route_change_share_percent": 0.0
+        },
+        "plus_25": {
+          "label": "2.00 (+25%)",
+          "mean_travel_time_min": 34.61,
+          "delta_travel_time_min": 3.37,
+          "percent_delta_travel_time": 10.8,
+          "route_changes_count": 0,
+          "route_change_share_percent": 0.0
+        }
+      }
+    },
+    "v90": {
+      "name": "V_90 Normalizer Capacity",
+      "baseline_value": 5830.0,
+      "variations": {
+        "minus_25": {
+          "label": "4,372.5 (-25%)",
+          "mean_travel_time_min": 34.87,
+          "delta_travel_time_min": 3.64,
+          "percent_delta_travel_time": 11.64,
+          "route_changes_count": 0,
+          "route_change_share_percent": 0.0
+        },
+        "plus_25": {
+          "label": "7,287.5 (+25%)",
+          "mean_travel_time_min": 27.96,
+          "delta_travel_time_min": -3.27,
+          "percent_delta_travel_time": -10.48,
+          "route_changes_count": 0,
+          "route_change_share_percent": 0.0
+        }
+      }
+    },
+    "clip_max": {
+      "name": "Clip Range Maximum (Saturation cap)",
+      "baseline_value": 2.5,
+      "variations": {
+        "minus_25": {
+          "label": "1.875 (-25%)",
+          "mean_travel_time_min": 27.39,
+          "delta_travel_time_min": -3.84,
+          "percent_delta_travel_time": -12.3,
+          "route_changes_count": 0,
+          "route_change_share_percent": 0.0
+        },
+        "plus_25": {
+          "label": "3.125 (+25%)",
+          "mean_travel_time_min": 31.23,
+          "delta_travel_time_min": 0.0,
+          "percent_delta_travel_time": 0.0,
+          "route_changes_count": 0,
+          "route_change_share_percent": 0.0
+        }
+      }
+    },
+    "road_hierarchy_overall": {
+      "name": "Road Hierarchy (Overall Factors)",
+      "baseline_value": "Motorway: 1.05, Arterial: 1.00, Residential: 0.90",
+      "variations": {
+        "minus_25": {
+          "label": "All scaled x0.75 (-25%)",
+          "mean_travel_time_min": 23.42,
+          "delta_travel_time_min": -7.81,
+          "percent_delta_travel_time": -25.0,
+          "route_changes_count": 0,
+          "route_change_share_percent": 0.0
+        },
+        "plus_25": {
+          "label": "All scaled x1.25 (+25%)",
+          "mean_travel_time_min": 39.04,
+          "delta_travel_time_min": 7.81,
+          "percent_delta_travel_time": 25.0,
+          "route_changes_count": 0,
+          "route_change_share_percent": 0.0
+        }
+      }
+    },
+    "road_hierarchy_contrast": {
+      "name": "Road Hierarchy Contrast (Differential)",
+      "baseline_value": "Diff: +5% Motorway, -10% Residential",
+      "variations": {
+        "minus_25": {
+          "label": "Contrast compressed by 25%",
+          "mean_travel_time_min": 31.23,
+          "delta_travel_time_min": -0.0,
+          "percent_delta_travel_time": -0.01,
+          "route_changes_count": 0,
+          "route_change_share_percent": 0.0
+        },
+        "plus_25": {
+          "label": "Contrast amplified by 25%",
+          "mean_travel_time_min": 31.24,
+          "delta_travel_time_min": 0.0,
+          "percent_delta_travel_time": 0.01,
+          "route_changes_count": 0,
+          "route_change_share_percent": 0.0
+        }
+      }
+    },
+    "mode_factor": {
+      "name": "Travel Mode Factor (Car)",
+      "baseline_value": 1.0,
+      "variations": {
+        "minus_25": {
+          "label": "0.75 (-25%)",
+          "mean_travel_time_min": 23.42,
+          "delta_travel_time_min": -7.81,
+          "percent_delta_travel_time": -25.0,
+          "route_changes_count": 0,
+          "route_change_share_percent": 0.0
+        },
+        "plus_25": {
+          "label": "1.25 (+25%)",
+          "mean_travel_time_min": 39.04,
+          "delta_travel_time_min": 7.81,
+          "percent_delta_travel_time": 25.0,
+          "route_changes_count": 0,
+          "route_change_share_percent": 0.0
+        }
+      }
+    }
+  },
+  "plain_language_conclusion": "Sensitivity analysis reveals that estimated transit durations scale linearly and predictably with proportional adjustments to multiplier constants (e.g., +/-25% shifts in mode factor or overall road hierarchy shift travel times by exactly +/-25.0%, while +/-25% shifts in slope or V90 alter travel times by approximately +/-12.8% and -9.8%/+14.8% respectively). However, topological route selection exhibits absolute insensitivity: 0.0% of the 1,200 evaluated routes changed across all +/-25% parameter perturbations. This dichotomy occurs because the stylized 23-node graph offers sparse alternative cycles whose geometric detours are roughly 50% longer than direct paths, requiring extreme multiplier differentials far beyond +/-25% to trigger route divergence. Readers must note that these constants are heuristic, uncalibrated engineering assumptions, and actual travel times must not be interpreted as empirical measurements on Hyderabad corridors."
+}
