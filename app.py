@@ -703,7 +703,7 @@ m = folium.Map(
 
 # Add Road Network
 # Add Road Network - REMOVED for performance
-# The base tiles (CartoDB Positron) already show the road network clearly.
+# The base tiles (OpenStreetMap) already show the road network clearly.
 # Adding the full GeoJSON overlay was causing rendering delays and visibility issues.
 pass
 
